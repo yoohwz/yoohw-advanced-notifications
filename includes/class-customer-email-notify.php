@@ -156,6 +156,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				if ( $unfinished_preparation || ! empty( $counts['cancelled'] ) || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
 					$campaign['status'] = 'cancelled';
 					$campaign['cancelled'] = true;
+					$campaign['tracking_counts'] = $counts;
 					$this->save_campaign_record( $campaign );
 				}
 			}

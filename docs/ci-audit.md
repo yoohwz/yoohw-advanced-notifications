@@ -25,6 +25,13 @@ Tổng cộng **660 assertion đạt** trên năm profile. CI contracts, actionl
 
 Profile 6.6/PHP 8.1 giữ `runner.log` của lần phát hiện lỗi callback đầu tiên. Sau sửa, ba bộ test được chạy lại trên chính site riêng đó; kết quả cuối nằm trong `integration.log`, `internationalization.log` và `reliability-full-fixed/results.json`. Bốn profile còn lại hoàn tất trực tiếp bằng `bin/run-wp-regression.sh`.
 
+## Review PR #2 tại `d744b9f`
+
+- **[P2] Activity giữ bộ đếm lỗi sau khi hủy campaign.** Tái hiện: recipient đã là `cancelled`, nhưng record campaign vẫn lưu `tracking_counts = {queue_failed: 1}` và cột Activity hiển thị `Queue failed: 1`. Campaign có trạng thái `cancelled` không được reconciliation cập nhật tiếp nên lỗi hiển thị không tự hết. Deactivation nay lưu luôn `$counts` đã đọc vào record, không thêm query hay cơ chế mới.
+- Thêm hai assertion kiểm tra bộ đếm và đúng dòng HTML trong Campaign list cho queue failure/schedule failure. Assertion mới thất bại trước sửa; bộ reliability đầy đủ nay có 56 assertion thay vì 54. Kết quả hosted của commit sau review được ghi trong PR; bảng 660 assertion phía trên là bằng chứng audit ban đầu.
+- Về độ phức tạp: thay đổi runtime giới hạn ở deactivation và một annotation SQL đã đối chiếu. CI tái sử dụng ba bộ test hiện có, có runner dùng chung cho ma trận và canary. Không cần thêm abstraction, service, schema migration hoặc approval gate; 41 warning direct-query/no-cache không phải blocker của review này.
+- Bằng chứng local: `pr2-review-before/results.json`, `pr2-review-before/campaign.html` và `pr2-review-fixed/` trong thư mục bằng chứng bên dưới.
+
 ## Bằng chứng và giới hạn
 
 - Thư mục bằng chứng: `/tmp/advanced-notifications-audit-20261028/`. Mỗi profile lưu log runner, môi trường, kết quả từng assertion và transport giả lập.
