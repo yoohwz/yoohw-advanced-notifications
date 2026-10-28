@@ -14,7 +14,71 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 	$wait = static function ( $name ) use ( $dir ) { $end = microtime( true ) + 25; while ( ! file_exists( $dir . '/' . $name ) ) { if ( microtime( true ) > $end ) { throw new RuntimeException( 'Barrier timed out.' ); } usleep( 10000 ); } };
 	add_filter( 'pre_wp_mail', static function ( $pre, $atts ) use ( $dir ) { file_put_contents( $dir . '/transport.jsonl', wp_json_encode( [ 'subject' => $atts['subject'] ] ) . "\n", FILE_APPEND | LOCK_EX ); return true; }, PHP_INT_MAX, 2 );
 	$out = null;
-	if ( 'erase' === $input['mode'] ) { $out = $n->erase_personal_data( $email ); }
+	if ( 'legacy_seed' === $input['mode'] ) {
+		$args = array_merge( $p, [ 'to' => $email, 'name' => 'Legacy fixture' ] );
+		$action_id = as_schedule_single_action( time() - 300, YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, [ $args ], YOOHW_AN_Customer_Email_Notify::ACTION_GROUP );
+		delete_option( 'yoohw_an_reliability_import' );
+		$out = [ 'action_id' => $action_id, 'due' => ActionScheduler::store()->get_date( $action_id )->format( 'Y-m-d H:i:s' ) ];
+	} elseif ( 'legacy_run' === $input['mode'] ) {
+		$barrier = static function ( $sql ) use ( $dir, $wait ) { if ( str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, 'yoohw_an_privacy_wait_' ) ) { touch( $dir . '/checkpoint-written' ); $wait( 'release-checkpoint' ); } return $sql; };
+		$failure = static function ( $sql ) { return str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'yoohw_an_privacy_wait_' ) ? 'INSERT INTO missing_privacy_wait_fixture VALUES (1)' : $sql; };
+		if ( ! empty( $input['hold_checkpoint'] ) ) { add_filter( 'query', $barrier ); }
+		if ( ! empty( $input['fail_checkpoint'] ) ) { $wpdb->suppress_errors(); add_filter( 'query', $failure ); }
+		ActionScheduler_QueueRunner::instance()->process_action( $input['action_id'], 'Privacy concurrency fixture' );
+		remove_filter( 'query', $barrier ); remove_filter( 'query', $failure );
+		$out = ActionScheduler::store()->get_status( $input['action_id'] );
+	} elseif ( 'legacy_inspect' === $input['mode'] ) {
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT email,status,attempts,action_id,scheduled_at_gmt FROM %i WHERE campaign_id = %s', $table, $id ), ARRAY_A );
+		$action = ActionScheduler::store()->fetch_action( $input['action_id'] );
+		$out = [ 'action_status' => ActionScheduler::store()->get_status( $input['action_id'] ), 'marker' => $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'row' => $row, 'history' => isset( $f( 'get_campaign_history' )[ $id ] ), 'args' => $action->get_args() ];
+	} elseif ( 'legacy_tamper' === $input['mode'] ) {
+		$wpdb->query( $wpdb->prepare( "UPDATE %i SET args = '[]', extended_args = NULL WHERE action_id = %d", $wpdb->prefix . 'actionscheduler_actions', $input['action_id'] ) ); $out = true;
+	} elseif ( 'legacy_fail' === $input['mode'] ) {
+		ActionScheduler::store()->mark_failure( $input['action_id'] ); $out = true;
+	} elseif ( 'legacy_import_fault' === $input['mode'] ) {
+		$fault = static function ( $sql ) use ( $input ) {
+			$matches = 'snapshot-failure' === $input['case'] ? str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'yoohw_an_record_' ) : str_starts_with( $sql, 'UPDATE' ) && str_contains( $sql, 'SET action_id =' );
+			return $matches ? 'UPDATE missing_privacy_import_fixture SET missing = 1' : $sql;
+		};
+		$wpdb->suppress_errors(); add_filter( 'query', $fault ); touch( $dir . '/fault-ready' ); $wait( 'fault-go' );
+		$f( 'maybe_import_legacy_jobs' ); remove_filter( 'query', $fault );
+		$out = (bool) $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] );
+	} elseif ( 'legacy_import' === $input['mode'] ) {
+		$f( 'maybe_import_legacy_jobs' ); $out = true;
+	} elseif ( 'legacy_recover' === $input['mode'] ) {
+		// Exercise existing automatic recovery after the normal missing/failed-job grace interval.
+		$wpdb->query( $wpdb->prepare( "UPDATE %i SET updated_at = %s WHERE campaign_id = %s AND status IN ('queued','scheduled')", $table, gmdate( 'Y-m-d H:i:s', time() - 301 ), $id ) );
+		$n->reconcile_open_campaigns( $id ); $n->dispatch_campaign_batch( $id );
+		$actions = as_get_scheduled_actions( [ 'hook' => YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, 'status' => 'pending', 'per_page' => 100 ], 'ids' );
+		foreach ( $actions as $action_id ) { $action = ActionScheduler::store()->fetch_action( $action_id ); if ( ( $action->get_args()[0]['campaign_id'] ?? '' ) === $id ) { ActionScheduler_QueueRunner::instance()->process_action( $action_id, 'Privacy recovery fixture' ); } }
+		$out = true;
+	} elseif ( 'posthandoff_privacy_fault' === $input['mode'] ) {
+		$f( 'confirm_campaign', $p, [ $recipient ] );
+		$ref = $f( 'store_campaign_email_payload', $p );
+		$fault = static function ( $sql ) { return str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, 'yoohw_an_erased_' ) ? 'SELECT option_value FROM missing_privacy_diagnostic_fixture' : $sql; };
+		$translate = static function ( $translated, $text ) { return 'Mail system accepted the request; inbox delivery is not verified.' === $text ? 'Accepted for diagnostic-reference@example.com' : $translated; };
+		$arm = static function ( $pre ) use ( $fault ) { add_filter( 'query', $fault ); return true; };
+		add_filter( 'gettext', $translate, 10, 2 ); add_filter( 'pre_wp_mail', $arm, PHP_INT_MAX ); $wpdb->suppress_errors();
+		$n->process_single_email( $f( 'build_email_action_args', $p, $recipient, $ref ) );
+		remove_filter( 'query', $fault ); remove_filter( 'gettext', $translate ); remove_filter( 'pre_wp_mail', $arm );
+		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT status,claim_token,last_error FROM %i WHERE campaign_id = %s', $table, $id ), ARRAY_A );
+		$out = 'sent' === $row['status'] && ! empty( $row['claim_token'] ) && '' === $row['last_error'];
+	} elseif ( 'subscription_reference' === $input['mode'] ) {
+		$n->erase_personal_data( $email );
+		$other = $id . '-other@example.com';
+		$saved = $f( 'record_subscription', $other, 'subscribed', 'Opt-in evidence from ' . $email );
+		$record = $f( 'read_durable_option', 'yoohw_an_subscription_' . hash( 'sha256', $other ) );
+		$out = [ 'evidence_source' => $saved && false === stripos( wp_json_encode( $record ), $email ) && $record['email'] === $other ];
+		$optout = $id . '-optout@example.com'; $f( 'add_unsubscribed_email', $optout, $email );
+		$out['optout_reference'] = false === stripos( wp_json_encode( $f( 'read_durable_option', 'yoohw_an_optout_' . hash( 'sha256', $optout ) ) ), $email );
+		$f( 'track_recipient_status', $id, $other, 'queued', 0, 'Diagnostic for ' . $email );
+		$diagnostic = $wpdb->get_var( $wpdb->prepare( 'SELECT last_error FROM %i WHERE campaign_id = %s AND email_hash = %s', $table, $id, hash( 'sha256', $other ) ) );
+		$out['tracking_diagnostic'] = false === stripos( $diagnostic, $email );
+		$wpdb->query( $wpdb->prepare( "UPDATE %i SET email = %s,status = 'processing',claim_token = 'source-fixture' WHERE campaign_id = %s", $table, $other, $id ) );
+		$f( 'finish_delivery', $id, $id, $other, 'source-fixture', 'unknown', 'Late diagnostic for ' . $email );
+		$diagnostic = $wpdb->get_var( $wpdb->prepare( 'SELECT last_error FROM %i WHERE campaign_id = %s AND email_hash = %s', $table, $id, hash( 'sha256', $other ) ) );
+		$out['final_diagnostic'] = false === stripos( $diagnostic, $email );
+	} elseif ( 'erase' === $input['mode'] ) { $out = $n->erase_personal_data( $email ); }
 	elseif ( 'lock' === $input['mode'] ) {
 		foreach ( $input['locks'] as $lock ) { if ( ! $f( 'acquire_campaign_lock', $lock ) ) { throw new RuntimeException( 'Fixture lock unavailable.' ); } }
 		touch( $dir . '/ready' ); $wait( 'go' );

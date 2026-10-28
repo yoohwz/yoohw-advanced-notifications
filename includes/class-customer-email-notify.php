@@ -261,7 +261,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$table_name = $this->get_recipient_tracking_table_name();
 		$now        = current_time( 'mysql', true );
 		$email_hash = hash( 'sha256', $email );
-		$message    = sanitize_text_field( $message );
+		$message    = $this->scrub_erased_references( sanitize_text_field( $message ) );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
 		return false !== $wpdb->query( $wpdb->prepare(
@@ -4581,10 +4581,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
-		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		if ( ! $this->acquire_campaign_lock( '__privacy__', 2 ) ) { return false; }
 		try {
 		$key = 'yoohw_an_optout_' . hash( 'sha256', $email );
 		$data = $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ? [ 'suppressed' => true ] : [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
+		$data = $this->scrub_erased_references( $data );
 		$this->write_durable_option( $key, $data, true );
 		$saved = $this->read_durable_option( $key );
 		return is_array( $saved ) && ( ! empty( $saved['suppressed'] ) || $email === ( $saved['email'] ?? '' ) );
@@ -4881,7 +4882,14 @@ class YOOHW_AN_Customer_Email_Notify {
 		$to = strtolower( sanitize_email( $raw_args['to'] ?? '' ) );
 		$action_id = $this->get_current_action_id();
 		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $to ) ) ) { return; }
-		if ( ! $this->ensure_delivery_row( $campaign_id, $delivery_id, $to ) ) {
+		$ready = $this->ensure_delivery_row( $campaign_id, $delivery_id, $to );
+		if ( is_wp_error( $ready ) && 'privacy_busy' === $ready->get_error_code() && $action_id ) {
+			// The original AS action owns all plaintext. Save only its identity/checksum before it fails, so existing import/recovery can resume this known pre-handoff wait.
+			$marker = [ 'action_id' => $action_id, 'args_hash' => hash( 'sha256', wp_json_encode( $raw_args ) ), 'email_hash' => hash( 'sha256', $to ) ];
+			if ( false === $this->write_durable_option( 'yoohw_an_privacy_wait_' . $action_id, $marker ) || $marker !== $this->read_durable_option( 'yoohw_an_privacy_wait_' . $action_id ) ) { throw new RuntimeException( 'Privacy wait checkpoint unavailable; no mail was handed off.' ); }
+			throw new RuntimeException( 'Privacy cleanup busy before recipient initialization; saved for campaign recovery. No mail was handed off.' );
+		}
+		if ( ! $ready || is_wp_error( $ready ) ) {
 			throw new RuntimeException( 'Recipient storage unavailable; no mail was handed off.' );
 		}
 		$claim = $this->admit_delivery( $campaign_id, $delivery_id, $to, $action_id );

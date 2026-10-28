@@ -13,19 +13,27 @@ trait YOOHW_AN_Campaign_Reliability {
 		$this->current_action_id = 0;
 	}
 
-	/** Resumable, non-destructive import of inline pending jobs whose history may have been trimmed. */
+	/** Resumable import of pending legacy jobs and verified pre-handoff privacy waits. */
 	public function maybe_import_legacy_jobs() {
-		if ( $this->read_durable_option( 'yoohw_an_reliability_import' ) || ! class_exists( 'ActionScheduler' ) ) {
-			return;
+		if ( ! class_exists( 'ActionScheduler' ) ) { return; }
+		$import_pending = ! $this->read_durable_option( 'yoohw_an_reliability_import' );
+		$privacy_wait = [];
+		foreach ( $this->read_durable_options( 'yoohw_an_privacy_wait_' ) as $marker ) {
+			if ( is_array( $marker ) && ! empty( $marker['action_id'] ) && ! empty( $marker['args_hash'] ) && ! empty( $marker['email_hash'] ) ) { $privacy_wait[ absint( $marker['action_id'] ) ] = $marker; }
 		}
+		if ( ! $import_pending && ! $privacy_wait ) { return; }
 		global $wpdb;
 		$table = $wpdb->prefix . 'actionscheduler_actions';
 		$after = 0;
 		do {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read pending/in-progress legacy inline arguments directly so resumable import sees jobs stored by other workers.
+			$marked = $privacy_wait ? 'action_id IN (' . implode( ',', array_fill( 0, count( $privacy_wait ), '%d' ) ) . ')' : '0 = 1';
+			$params = [ $table, self::ACTION_SEND_SINGLE_EMAIL, $import_pending ? 1 : 0 ];
+			foreach ( array_keys( $privacy_wait ) as $action_id ) { $params[] = $action_id; }
+			$params[] = $after;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- The only dynamic SQL is a list of literal %d placeholders, each supplied an integer action ID. Failed jobs are eligible only with a verified pre-handoff privacy-wait checkpoint below.
 			$rows = $wpdb->get_results( $wpdb->prepare(
-				"SELECT action_id,args,extended_args,scheduled_date_gmt FROM %i WHERE hook = %s AND status IN ('pending','in-progress') AND action_id > %d ORDER BY action_id LIMIT 200",
-				$table, self::ACTION_SEND_SINGLE_EMAIL, $after
+				"SELECT action_id,args,extended_args,scheduled_date_gmt,status FROM %i WHERE hook = %s AND ((%d = 1 AND status IN ('pending','in-progress')) OR " . $marked . ') AND action_id > %d ORDER BY action_id LIMIT 200',
+				$params
 			), ARRAY_A );
 			if ( $wpdb->last_error ) {
 				return;
@@ -34,6 +42,12 @@ trait YOOHW_AN_Campaign_Reliability {
 				$after = (int) $row['action_id'];
 				$args = json_decode( $row['extended_args'] ?: $row['args'], true );
 				$args = $args[0] ?? [];
+				$marker = $privacy_wait[ $after ] ?? null;
+				if ( $marker ) {
+					if ( $this->read_durable_option( 'yoohw_an_erased_' . $marker['email_hash'] ) ) { delete_option( 'yoohw_an_privacy_wait_' . $after ); continue; }
+					// A checkpoint is written before throwing. An executing/crashed action must first become failed in AS.
+					if ( 'failed' !== $row['status'] || ! hash_equals( $marker['args_hash'], hash( 'sha256', wp_json_encode( $args ) ) ) ) { continue; }
+				}
 				if ( empty( $args['campaign_id'] ) || empty( $args['to'] ) ) {
 					continue;
 				}
@@ -55,16 +69,24 @@ trait YOOHW_AN_Campaign_Reliability {
 						}
 						$history = $this->get_campaign_history();
 						$history[ $id ]['audience_incomplete'] = true;
-						$this->save_campaign_record( $history[ $id ] );
+						if ( ! $this->save_campaign_record( $history[ $id ] ) ) { return; }
 					}
-					if ( ! $this->ensure_delivery_row( $id, $delivery, $args['to'] ) ) {
+					$ready = $this->ensure_delivery_row( $id, $delivery, $args['to'] );
+					if ( ! $ready || is_wp_error( $ready ) ) {
 						return;
 					}
 					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomically attach the legacy job only while action_id is unset; cached state could overwrite a worker's newer association.
 					if ( false === $wpdb->query( $wpdb->prepare(
-						"UPDATE %i SET action_id = %d, scheduled_at_gmt = %s, status = IF(status = 'queued' AND %s > UTC_TIMESTAMP(), 'scheduled', status) WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND action_id = 0",
-						$this->get_recipient_tracking_table_name(), $after, $row['scheduled_date_gmt'], $row['scheduled_date_gmt'], $id, $delivery, hash( 'sha256', strtolower( $args['to'] ) )
+						"UPDATE %i SET action_id = %d, scheduled_at_gmt = COALESCE(scheduled_at_gmt,%s), status = IF(status = 'queued' AND scheduled_at_gmt > UTC_TIMESTAMP(), 'scheduled', status) WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND action_id = 0 AND claim_token = '' AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait')",
+						$this->get_recipient_tracking_table_name(), $after, $row['scheduled_date_gmt'], $id, $delivery, hash( 'sha256', strtolower( $args['to'] ) )
 					) ) ) { return; }
+					if ( $marker ) {
+						// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Verify persisted ownership/due time before retiring the only pre-handoff recovery checkpoint.
+						$saved = $wpdb->get_row( $wpdb->prepare( 'SELECT action_id,scheduled_at_gmt,status,claim_token FROM %i WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s', $this->get_recipient_tracking_table_name(), $id, $delivery, $marker['email_hash'] ), ARRAY_A );
+						$protected = $saved && ( ! empty( $saved['claim_token'] ) || in_array( $saved['status'], [ 'sent', 'unknown', 'cancelled', 'skipped_unsubscribed' ], true ) );
+						if ( ! $saved || ( ! $protected && ( (int) $saved['action_id'] !== $after || $saved['scheduled_at_gmt'] !== $row['scheduled_date_gmt'] ) ) || empty( $this->get_campaign_history()[ $id ] ) ) { return; }
+						delete_option( 'yoohw_an_privacy_wait_' . $after );
+					}
 				} finally {
 					$this->release_campaign_lock( $id );
 				}
@@ -119,11 +141,11 @@ trait YOOHW_AN_Campaign_Reliability {
 	}
 
 	/** Connection-scoped locks have no lease that can expire while a worker is still running. */
-	private function acquire_campaign_lock( $campaign_id ) {
+	private function acquire_campaign_lock( $campaign_id, $timeout = 0 ) {
 		global $wpdb;
 		$key = 'yoohw_an_' . hash( 'sha256', DB_NAME . '|' . $wpdb->prefix . '|' . $campaign_id );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- GET_LOCK acquires a lock on this database connection; its result must never be cached or replaced with an options read/write lock.
-		return '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', substr( $key, 0, 64 ) ) );
+		return '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', substr( $key, 0, 64 ), $timeout ) );
 	}
 
 	private function release_campaign_lock( $campaign_id ) {
@@ -277,7 +299,7 @@ trait YOOHW_AN_Campaign_Reliability {
 		// Existing rows need no identity write. Let normal admission defer busy workers without consuming attempts.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Read current duplicate-protection identity without rewriting erased personal fields.
 		if ( $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM %i WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s', $this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id, $hash ) ) ) { return true; }
-		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return new WP_Error( 'privacy_busy', 'Privacy cleanup busy before recipient initialization.' ); }
 		try {
 			if ( $this->read_durable_option( 'yoohw_an_erased_' . $hash ) ) { return false; }
 			$now = current_time( 'mysql', true );
@@ -290,6 +312,11 @@ trait YOOHW_AN_Campaign_Reliability {
 	}
 
 	private function finish_delivery( $campaign_id, $delivery_id, $email, $token, $status, $message = '', $error_kind = '' ) {
+		$privacy_locked = $this->acquire_campaign_lock( '__privacy__' );
+		try {
+			// Diagnostic cleanup must never postpone a known mail outcome. A busy lock or failed privacy read drops text only.
+			try { $message = $privacy_locked ? $this->scrub_erased_references( $message ) : ''; }
+			catch ( Throwable $error ) { $message = ''; }
 		global $wpdb;
 		// An erased row must not regain personal diagnostic text from a late worker. Finalization itself never waits for privacy cleanup.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Only the worker owning this claim token may atomically finalize processing/unknown; cached updates cannot enforce ownership.
@@ -297,5 +324,6 @@ trait YOOHW_AN_Campaign_Reliability {
 			"UPDATE %i SET status = %s, last_error = IF(email = '', '', %s), error_kind = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND claim_token = %s AND status IN ('processing','unknown')",
 			$this->get_recipient_tracking_table_name(), $status, $message, $error_kind, current_time( 'mysql', true ), $campaign_id, $delivery_id, hash( 'sha256', strtolower( $email ) ), $token
 		) );
+		} finally { if ( $privacy_locked ) { $this->release_campaign_lock( '__privacy__' ); } }
 	}
 }

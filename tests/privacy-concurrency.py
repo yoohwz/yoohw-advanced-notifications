@@ -24,14 +24,16 @@ def spawn(mode, id, **kwargs):
     return subprocess.Popen([args.wp_command, 'eval-file', str(worker)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
-def collect(p):
+def collect(p, allow_killed=False):
     log, _ = p.communicate(timeout=35)
     with (out / 'workers.log').open('a') as f:
         f.write(f'PID={p.pid} EXIT={p.returncode}\n{log}\n')
-    if p.returncode:
+    if p.returncode and not allow_killed:
         raise AssertionError(log)
     lines = [line.removeprefix('AN_PRIVACY_RESULT=') for line in log.splitlines() if line.startswith('AN_PRIVACY_RESULT=')]
     if not lines:
+        if allow_killed:
+            return None
         raise AssertionError(log)
     return json.loads(lines[-1])
 
@@ -40,9 +42,9 @@ def run(mode, id, **kwargs):
     return collect(spawn(mode, id, **kwargs))
 
 
-def barrier():
+def barrier(name='ready'):
     deadline = time.monotonic() + 20
-    while not (out / 'ready').exists():
+    while not (out / name).exists():
         if time.monotonic() > deadline:
             raise AssertionError('Worker did not reach write barrier')
         time.sleep(.02)
@@ -127,6 +129,66 @@ try:
     check('active_shared_content_checksum_preserved', result['active_preserved'])
     check('terminal_shared_content_erased_on_repeat', result['terminal_scrubbed'])
     check('no_duplicate_transport_after_busy', len((out / 'transport.jsonl').read_text().splitlines()) == 3)
+    check('posthandoff_privacy_read_failure_preserves_sent_outcome', run('posthandoff_privacy_fault', tag + '-diagnostic-fault'))
+    references = run('subscription_reference', tag + '-source')
+    for name, passed in references.items():
+        check(name + '_cannot_restore_erased_third_party', passed)
+    for case in ['normal', 'crash', 'marker-failure', 'erased', 'generic-failed', 'tampered', 'snapshot-failure', 'association-failure']:
+        reset()
+        for name in ['checkpoint-written', 'release-checkpoint', 'fault-ready', 'fault-go']:
+            (out / name).unlink(missing_ok=True)
+        id = tag + '-legacy-' + case
+        lock = spawn('lock', id, locks=['__privacy__'])
+        barrier()
+        seed = run('legacy_seed', id)
+        aid = seed['action_id']
+        if case == 'generic-failed':
+            run('legacy_fail', id, action_id=aid)
+        else:
+            process = spawn('legacy_run', id, action_id=aid, hold_checkpoint=case == 'crash', fail_checkpoint=case == 'marker-failure')
+            if case == 'crash':
+                barrier('checkpoint-written')
+            else:
+                check('legacy_' + case + '_busy_action_is_failed', collect(process) == 'failed')
+            busy = run('legacy_inspect', id, action_id=aid)
+            check('legacy_' + case + '_no_early_recipient_or_handoff', not busy['row'])
+            if case != 'marker-failure':
+                check('legacy_' + case + '_hash_checkpoint_without_plaintext', busy['marker'] and set(busy['marker']) == {'action_id', 'args_hash', 'email_hash'} and '@' not in json.dumps(busy['marker']))
+        if case == 'erased':
+            run('erase', id)  # Tombstone commits while the identity writer/importer remains blocked.
+        elif case == 'tampered':
+            run('legacy_tamper', id, action_id=aid)
+        if case in ['snapshot-failure', 'association-failure']:
+            failed_import = spawn('legacy_import_fault', id, action_id=aid, case=case)
+            barrier('fault-ready')
+        release()
+        collect(lock)
+        if case in ['snapshot-failure', 'association-failure']:
+            (out / 'fault-go').touch()
+            check('legacy_' + case + '_retains_checkpoint_until_persisted', collect(failed_import))
+        if case == 'crash':
+            waiting = run('legacy_inspect', id, action_id=aid)
+            check('legacy_crash_inprogress_is_not_imported_or_replayed', waiting['action_status'] == 'in-progress' and waiting['marker'] and not waiting['row'])
+            process.kill()
+            collect(process, allow_killed=True)
+            run('legacy_fail', id, action_id=aid)  # Same terminal transition as the existing AS timeout cleaner.
+        if case == 'erased':
+            run('erase', id)
+        run('legacy_import', id)
+        state = run('legacy_inspect', id, action_id=aid)
+        if case in ['marker-failure', 'generic-failed', 'erased', 'tampered']:
+            check('legacy_' + case + '_does_not_reconstruct_or_replay', not state['row'])
+            continue
+        check('legacy_' + case + '_imports_checkpoint_once_after_unlock', state['row'] and state['history'] and not state['marker'] and state['row']['scheduled_at_gmt'] == seed['due'] and int(state['row']['attempts']) == 0)
+        run('legacy_import', id)
+        duplicate = run('legacy_inspect', id, action_id=aid)
+        check('legacy_' + case + '_duplicate_import_preserves_due_attempts', duplicate['row'] == state['row'])
+        run('legacy_recover', id, action_id=aid)
+        run('legacy_recover', id, action_id=aid)
+        after = run('legacy_inspect', id, action_id=aid)
+        check('legacy_' + case + '_actual_as_recovery_handoffs_once', after['row']['status'] == 'sent' and int(after['row']['attempts']) == 1 and after['row']['scheduled_at_gmt'] == seed['due'])
+    check('legacy_recovery_no_duplicate_transport', len((out / 'transport.jsonl').read_text().splitlines()) == 8)
+
 finally:
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=worker.parent.parent, text=True).strip()
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=worker.parent.parent, text=True).strip())

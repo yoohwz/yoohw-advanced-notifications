@@ -73,7 +73,7 @@ trait YOOHW_AN_Campaign_Privacy {
 			// The existing durable suppression write is the authority, never the editable evidence record.
 			if ( ! $this->add_unsubscribed_email( $email ) ) { return false; }
 		} elseif ( $this->is_email_unsubscribed( $email ) ) { return false; }
-		return false !== $this->write_durable_option( 'yoohw_an_subscription_' . hash( 'sha256', $email ), [ 'email' => $email, 'status' => $status, 'source' => $source, 'recorded_at' => time(), 'recorded_by' => get_current_user_id() ] );
+		return false !== $this->write_durable_option( 'yoohw_an_subscription_' . hash( 'sha256', $email ), $this->scrub_erased_references( [ 'email' => $email, 'status' => $status, 'source' => $source, 'recorded_at' => time(), 'recorded_by' => get_current_user_id() ] ) );
 		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 	public function handle_data_action() {
