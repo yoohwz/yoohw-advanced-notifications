@@ -206,6 +206,13 @@ trait YOOHW_AN_Campaign_Authoring {
 		if ( is_wp_error( $p ) ) { wp_die( esc_html( $p->get_error_message() ) ); }
 		return $this->store_preview_payload( $p );
 	}
+	private function render_preview_device_controls() {
+		echo '<div class="an-preview-devices" role="group" aria-label="' . esc_attr__( 'Preview width', 'yoohw-advanced-notifications' ) . '" hidden>';
+		foreach ( [ '100%' => [ 'desktop', __( 'Desktop', 'yoohw-advanced-notifications' ) ], '375px' => [ 'smartphone', __( 'Mobile', 'yoohw-advanced-notifications' ) ] ] as $width => $device ) {
+			echo '<button type="button" class="button an-preview-device" data-preview-width="' . esc_attr( $width ) . '" aria-pressed="' . ( '100%' === $width ? 'true' : 'false' ) . '" aria-label="' . esc_attr( $device[1] ) . '" title="' . esc_attr( $device[1] ) . '"><span class="dashicons dashicons-' . esc_attr( $device[0] ) . '" aria-hidden="true"></span></button>';
+		}
+		echo '</div>';
+	}
 	private function render_operator_preview( $p ) {
 		if ( ! empty( $_GET['audience_changed'] ) ) { echo '<p class="notice notice-warning" role="alert">' . esc_html__( 'Audience changed since preview. Review this updated preview and confirm again.', 'yoohw-advanced-notifications' ) . '</p>'; } // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Recipients and schedule to confirm', 'yoohw-advanced-notifications' ) . '</h2><dl class="an-preview-counts"><div><dt>' . esc_html__( 'Selected', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( number_format_i18n( $p['recipient_count'] ?? 0 ) ) . '</dd></div><div><dt>' . esc_html__( 'Excluded', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( number_format_i18n( $p['excluded_count'] ?? 0 ) ) . '</dd></div></dl>';
@@ -229,7 +236,8 @@ trait YOOHW_AN_Campaign_Authoring {
 			$sample = $p['recipient_sample'][ $index ] ?? $sample;
 			echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Personalized email preview', 'yoohw-advanced-notifications' ) . '</h2><form class="an-filter-form" method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="preview_token" value="' . esc_attr( sanitize_key( wp_unslash( $_GET['preview_token'] ?? '' ) ) ) . '"><div class="an-field"><label for="an-sample-index">' . esc_html__( 'Sample recipient (up to 20)', 'yoohw-advanced-notifications' ) . '</label><select id="an-sample-index" name="sample_index">'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sample form.
 			foreach ( $p['recipient_sample'] as $i => $recipient ) { echo '<option value="' . esc_attr( $i ) . '" ' . selected( $sample['email'], $recipient['email'], false ) . '>' . esc_html( $recipient['email'] ) . '</option>'; }
-			echo '</select></div><button class="button">' . esc_html__( 'Show sample', 'yoohw-advanced-notifications' ) . '</button></form><p class="an-field an-field-compact"><label for="an-personal-width">' . esc_html__( 'Preview width', 'yoohw-advanced-notifications' ) . '</label> <select id="an-personal-width" class="an-preview-width"><option value="100%">' . esc_html__( 'Desktop', 'yoohw-advanced-notifications' ) . '</option><option value="375px">' . esc_html__( 'Mobile', 'yoohw-advanced-notifications' ) . '</option></select></p>';
+			echo '</select></div><button class="button">' . esc_html__( 'Show sample', 'yoohw-advanced-notifications' ) . '</button></form>';
+			$this->render_preview_device_controls();
 			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $sample['name'] ?: $sample['email'], $p['products_label'] ?? '' ], $p['message'] );
 			$message = $this->append_unsubscribe_footer( $message, $sample['email'], $p['campaign_id'] );
 			$html = $this->build_woocommerce_email_body( $p['heading'], $message );

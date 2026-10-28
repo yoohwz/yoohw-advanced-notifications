@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T10:11:57+00:00\n"
+"POT-Creation-Date: 2026-10-28T10:40:04+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
@@ -381,21 +381,6 @@ msgstr ""
 msgid "Live"
 msgstr ""
 
-#: includes/class-customer-email-notify.php:1200
-#: includes/trait-campaign-authoring.php:232
-msgid "Preview width"
-msgstr ""
-
-#: includes/class-customer-email-notify.php:1200
-#: includes/trait-campaign-authoring.php:232
-msgid "Desktop"
-msgstr ""
-
-#: includes/class-customer-email-notify.php:1200
-#: includes/trait-campaign-authoring.php:232
-msgid "Mobile"
-msgstr ""
-
 #: includes/class-customer-email-notify.php:1203
 #: includes/class-customer-email-notify.php:5388
 msgid "Email subject"
@@ -438,7 +423,7 @@ msgid "All recipients share one UTC due time."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1242
-#: includes/trait-campaign-authoring.php:215
+#: includes/trait-campaign-authoring.php:222
 msgid "Same local time per recipient (location estimate; UTC fallback)"
 msgstr ""
 
@@ -797,7 +782,7 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: includes/class-customer-email-notify.php:2008
-#: includes/trait-campaign-authoring.php:211
+#: includes/trait-campaign-authoring.php:218
 msgid "Excluded"
 msgstr ""
 
@@ -1254,7 +1239,7 @@ msgid "selected time"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:3670
-#: includes/trait-campaign-authoring.php:215
+#: includes/trait-campaign-authoring.php:222
 msgid "After confirmation"
 msgstr ""
 
@@ -1484,7 +1469,7 @@ msgid "Matching order statuses"
 msgstr ""
 
 #: includes/trait-campaign-audiences.php:159
-#: includes/trait-campaign-authoring.php:221
+#: includes/trait-campaign-authoring.php:228
 msgid "Saved audience conditions"
 msgstr ""
 
@@ -1646,63 +1631,75 @@ msgid "At least one recipient has a past, nonexistent or repeated local time. Ch
 msgstr ""
 
 #: includes/trait-campaign-authoring.php:210
+msgid "Preview width"
+msgstr ""
+
+#: includes/trait-campaign-authoring.php:211
+msgid "Desktop"
+msgstr ""
+
+#: includes/trait-campaign-authoring.php:211
+msgid "Mobile"
+msgstr ""
+
+#: includes/trait-campaign-authoring.php:217
 msgid "Audience changed since preview. Review this updated preview and confirm again."
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:211
+#: includes/trait-campaign-authoring.php:218
 msgid "Recipients and schedule to confirm"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:211
+#: includes/trait-campaign-authoring.php:218
 msgid "Selected"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:212
+#: includes/trait-campaign-authoring.php:219
 msgid "Removed by order conditions"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:212
+#: includes/trait-campaign-authoring.php:219
 msgid "Removed by subscription or campaign history"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:212
+#: includes/trait-campaign-authoring.php:219
 msgid "Removed by exclusions or suppression"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:215
+#: includes/trait-campaign-authoring.php:222
 msgid "One time in store timezone"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:215
+#: includes/trait-campaign-authoring.php:222
 msgid "Legacy schedule"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:216
+#: includes/trait-campaign-authoring.php:223
 msgid "Schedule mode / store timezone"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:219
+#: includes/trait-campaign-authoring.php:226
 msgid "UTC fallback count"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:219
+#: includes/trait-campaign-authoring.php:226
 msgid "Earliest and latest due (UTC)"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:223
+#: includes/trait-campaign-authoring.php:230
 msgid "Inspect an address"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:230
-#: includes/trait-campaign-authoring.php:236
+#: includes/trait-campaign-authoring.php:237
+#: includes/trait-campaign-authoring.php:244
 msgid "Personalized email preview"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:230
+#: includes/trait-campaign-authoring.php:237
 msgid "Sample recipient (up to 20)"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:232
+#: includes/trait-campaign-authoring.php:239
 msgid "Show sample"
 msgstr ""
 
@@ -2095,23 +2092,23 @@ msgstr ""
 msgid "Personal fields removed. Active campaign shared content is retained until completion; run erasure again if it contains personal text. Minimal recipient/campaign hashes, outcomes and suppression/erasure protection remain to prevent duplicate sends and data reconstruction."
 msgstr ""
 
-#: includes/trait-campaign-reliability.php:49
+#: includes/trait-campaign-reliability.php:50
 msgid "Deactivation did not complete. Some campaign cancellations may already be saved; check storage and admission workers, then retry deactivation."
 msgstr ""
 
-#: includes/trait-campaign-reliability.php:215
+#: includes/trait-campaign-reliability.php:224
 msgid "Campaign is being prepared. Open Campaigns & Logs to follow its progress."
 msgstr ""
 
-#: includes/trait-campaign-reliability.php:233
+#: includes/trait-campaign-reliability.php:242
 msgid "Confirmation could not be saved. Please try again."
 msgstr ""
 
-#: includes/trait-campaign-reliability.php:296
+#: includes/trait-campaign-reliability.php:305
 msgid "Worker stopped around mail handoff. Check the mail provider before creating a new campaign; this recipient will not be retried automatically."
 msgstr ""
 
-#: includes/trait-campaign-reliability.php:314
+#: includes/trait-campaign-reliability.php:323
 msgid "Recipient unsubscribed before recovery."
 msgstr ""
 

@@ -17,7 +17,7 @@
 		var manual = source === yoohwAN.manualSource;
 		function revealApplicable(selector, applicable) {
 			var $row = $(selector);
-			var hasValue = $row.find(':input').toArray().some(function(input) {
+			var hasValue = $row.find(':input').not('.select2-search__field').toArray().some(function(input) {
 				var value = $(input).val();
 				return Array.isArray(value) ? value.length > 0 : value !== null && String(value).trim() !== '';
 			});
@@ -235,7 +235,18 @@
 	}
 
 	$(function() {
+		// Reuse WooCommerce's enhancement for every ordinary selection in this workspace.
+		$('.yoohw-an-workspace select').not('.wc-product-search, .wc-customer-search, .wc-enhanced-select-nostd, .chosen_select_nostd').addClass('wc-enhanced-select').attr('data-width', '100%');
 		$(document.body).trigger('wc-enhanced-select-init');
+		$('.yoohw-an-workspace select').each(function() {
+			var $label = $(this.labels).first().clone();
+			$label.find('select, .select2-container').remove();
+			var label = $label.text().trim();
+			if (label) {
+				$(this).next('.select2-container').find('.select2-selection, .select2-search__field').attr('aria-label', label).removeAttr('aria-labelledby');
+			}
+		});
+		$('.an-preview-devices').prop('hidden', false);
 		initializeComposeSteps();
 		initializeCancelDialog();
 		initializeEmailPreviewFrame();
@@ -255,9 +266,11 @@
 		});
 	});
 	$(window).on('pageshow', function() { toggleRecipientFields(); toggleScheduleFields(); toggleTestEmailFields(); });
-	$(document).on('change', '.an-preview-width', function() {
+	$(document).on('click', '.an-preview-device', function() {
+		$(this).closest('.an-preview-devices').find('button').attr('aria-pressed', 'false');
+		$(this).attr('aria-pressed', 'true');
 		var $panel = $(this).closest('.yoohw-advanced-notifications-preview-panel');
-		($panel.length ? $panel.find('iframe') : $('.an-personal-preview')).css('width', this.value).css('max-width', '100%');
+		($panel.length ? $panel.find('iframe') : $('.an-personal-preview')).css('width', this.dataset.previewWidth).css('max-width', '100%');
 	});
 	$(document).on('change', '#an-template', function() {
 		var option = this.options[this.selectedIndex];

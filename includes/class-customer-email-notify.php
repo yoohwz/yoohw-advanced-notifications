@@ -1197,7 +1197,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							<span><?php esc_html_e( 'Live', 'yoohw-advanced-notifications' ); ?></span>
 						</div>
 
-						<p class="an-field an-field-compact"><label for="an-compose-width"><?php esc_html_e( 'Preview width', 'yoohw-advanced-notifications' ); ?> <select id="an-compose-width" class="an-preview-width"><option value="100%"><?php esc_html_e( 'Desktop', 'yoohw-advanced-notifications' ); ?></option><option value="375px"><?php esc_html_e( 'Mobile', 'yoohw-advanced-notifications' ); ?></option></select></label></p>
+						<?php $this->render_preview_device_controls(); ?>
 <div class="yoohw-advanced-notifications-preview-subject">
 							<strong><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></strong>
 							<span id="yoohw-advanced-notifications-preview-subject"><?php esc_html_e( 'Email subject', 'yoohw-advanced-notifications' ); ?></span>
