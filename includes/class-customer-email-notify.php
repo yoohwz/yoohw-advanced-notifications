@@ -1197,7 +1197,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							<span><?php esc_html_e( 'Live', 'yoohw-advanced-notifications' ); ?></span>
 						</div>
 
-						<p><label for="an-compose-width"><?php esc_html_e( 'Preview width', 'yoohw-advanced-notifications' ); ?> <select id="an-compose-width" class="an-preview-width"><option value="100%"><?php esc_html_e( 'Desktop', 'yoohw-advanced-notifications' ); ?></option><option value="375px"><?php esc_html_e( 'Mobile', 'yoohw-advanced-notifications' ); ?></option></select></label></p>
+						<p class="an-field an-field-compact"><label for="an-compose-width"><?php esc_html_e( 'Preview width', 'yoohw-advanced-notifications' ); ?> <select id="an-compose-width" class="an-preview-width"><option value="100%"><?php esc_html_e( 'Desktop', 'yoohw-advanced-notifications' ); ?></option><option value="375px"><?php esc_html_e( 'Mobile', 'yoohw-advanced-notifications' ); ?></option></select></label></p>
 <div class="yoohw-advanced-notifications-preview-subject">
 							<strong><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></strong>
 							<span id="yoohw-advanced-notifications-preview-subject"><?php esc_html_e( 'Email subject', 'yoohw-advanced-notifications' ); ?></span>
@@ -1853,13 +1853,8 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				<h2><?php esc_html_e( 'Sender', 'yoohw-advanced-notifications' ); ?></h2>
 
-				<table class="form-table">
-					<tr>
-						<th>
-							<label for="from_email"><?php esc_html_e( 'From email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+				<div class="an-form-grid"><div class="an-field"><label for="from_email"><?php esc_html_e( 'From email', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="email"
 								name="from_email"
 								id="from_email"
@@ -1869,32 +1864,18 @@ class YOOHW_AN_Customer_Email_Notify {
 							>
 							<p class="description">
 								<?php esc_html_e( 'Used as the sender email for every campaign.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="from_name"><?php esc_html_e( 'From name', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+							</p></div>
+<div class="an-field"><label for="from_name"><?php esc_html_e( 'From name', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="text"
 								name="from_name"
 								id="from_name"
 								class="regular-text"
 								value="<?php echo esc_attr( $this->get_sender_name() ); ?>"
 								required
-							>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="reply_to_email"><?php esc_html_e( 'Reply-To email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+							></div>
+<div class="an-field"><label for="reply_to_email"><?php esc_html_e( 'Reply-To email', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="email"
 								name="reply_to_email"
 								id="reply_to_email"
@@ -1904,14 +1885,20 @@ class YOOHW_AN_Customer_Email_Notify {
 							>
 							<p class="description">
 								<?php esc_html_e( 'Used when automated-reply suppression is disabled.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th><?php esc_html_e( 'Automated replies', 'yoohw-advanced-notifications' ); ?></th>
-						<td>
-							<label for="suppress_automated_replies">
+							</p></div>
+<div class="an-field"><label for="no_reply_email"><?php esc_html_e( 'No-reply email', 'yoohw-advanced-notifications' ); ?></label>
+<input
+								type="email"
+								name="no_reply_email"
+								id="no_reply_email"
+								class="regular-text"
+								value="<?php echo esc_attr( $this->get_no_reply_email() ); ?>"
+							>
+							<p class="description">
+								<?php esc_html_e( 'Used as Reply-To while suppression is enabled, so non-compliant automatic responders do not reach the support inbox.', 'yoohw-advanced-notifications' ); ?>
+							</p></div>
+<div class="an-field an-field-full"><span class="an-field-title"><?php esc_html_e( 'Automated replies', 'yoohw-advanced-notifications' ); ?></span>
+<label class="an-checkbox-label" for="suppress_automated_replies">
 								<input
 									type="checkbox"
 									name="suppress_automated_replies"
@@ -1923,28 +1910,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							</label>
 							<p class="description">
 								<?php esc_html_e( 'Adds standards-based bulk/automatic message headers while preserving delivery failure notifications.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="no_reply_email"><?php esc_html_e( 'No-reply email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
-								type="email"
-								name="no_reply_email"
-								id="no_reply_email"
-								class="regular-text"
-								value="<?php echo esc_attr( $this->get_no_reply_email() ); ?>"
-							>
-							<p class="description">
-								<?php esc_html_e( 'Used as Reply-To while suppression is enabled, so non-compliant automatic responders do not reach the support inbox.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-				</table>
+							</p></div></div>
 
 				<?php submit_button( __( 'Save Settings', 'yoohw-advanced-notifications' ) ); ?>
 			</form>
