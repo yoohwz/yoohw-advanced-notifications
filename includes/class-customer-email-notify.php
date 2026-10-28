@@ -4,7 +4,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/trait-campaign-reliability.php';
+
 class YOOHW_AN_Customer_Email_Notify {
+	use YOOHW_AN_Campaign_Reliability;
 
 	const ACTION_SEND_SINGLE_EMAIL = 'yoohw_an_send_single_email';
 	const ACTION_UNSUBSCRIBE       = 'yoohw_an_unsubscribe';
@@ -14,12 +17,11 @@ class YOOHW_AN_Customer_Email_Notify {
 	const ACTION_GROUP             = 'yoohw-advanced-notifications';
 	const LOG_SOURCE               = 'yoohw-advanced-notifications';
 	const PREVIEW_TRANSIENT_PREFIX = 'yoohw_an_preview_';
-	const CAMPAIGN_LOCK_PREFIX     = 'yoohw_an_campaign_';
 	const DELIVERY_CLAIM_PREFIX    = 'yoohw_an_delivery_';
 	const CAMPAIGN_PAYLOAD_PREFIX  = 'yoohw_an_payload_';
 	const CAMPAIGN_PAYLOAD_SCHEMA  = 1;
 	const ACTION_ARGS_SCHEMA       = 2;
-	const RECIPIENT_TRACKING_SCHEMA = 2;
+	const RECIPIENT_TRACKING_SCHEMA = 3;
 	const OPTION_FROM_EMAIL        = 'yoohw_an_from_email';
 	const OPTION_FROM_NAME         = 'yoohw_an_from_name';
 	const OPTION_REPLY_TO_EMAIL    = 'yoohw_an_reply_to_email';
@@ -31,7 +33,6 @@ class YOOHW_AN_Customer_Email_Notify {
 	const OPTION_TRACKING_SCHEMA   = 'yoohw_an_tracking_schema';
 	const ORDER_QUERY_LIMIT        = 200;
 	const USER_QUERY_LIMIT         = 500;
-	const CAMPAIGN_HISTORY_LIMIT   = 100;
 	const CAMPAIGN_LOG_LIMIT       = 1000;
 	const CAMPAIGN_HISTORY_PER_PAGE = 20;
 	const CAMPAIGN_LOG_PER_PAGE     = 50;
@@ -45,6 +46,9 @@ class YOOHW_AN_Customer_Email_Notify {
 	private $current_from_email = '';
 	private $current_from_name  = '';
 	private $last_mail_error    = '';
+	private $mail_handoff_started = false;
+	private $current_action_id = 0;
+	private $recovery_enabled = true;
 	private $campaign_payload_cache = [];
 	private $recipient_tracking_table_ready = null;
 
@@ -63,6 +67,10 @@ class YOOHW_AN_Customer_Email_Notify {
 		add_action( self::ACTION_RECONCILE_CAMPAIGNS, [ $this, 'reconcile_open_campaigns' ], 10, 1 );
 		add_action( 'init', [ $this, 'maybe_install_recipient_tracking_table' ], 5 );
 		add_action( 'init', [ $this, 'maybe_schedule_campaign_reconciliation' ], 20 );
+		add_action( 'init', [ $this, 'maybe_import_legacy_jobs' ], 10 );
+		add_action( 'action_scheduler_before_execute', [ $this, 'capture_action_id' ], 1 );
+		add_action( 'action_scheduler_after_execute', [ $this, 'clear_action_id' ], 100 );
+		add_action( 'action_scheduler_failed_execution', [ $this, 'clear_action_id' ], 100 );
 	}
 
 	public function maybe_install_recipient_tracking_table() {
@@ -92,6 +100,9 @@ class YOOHW_AN_Customer_Email_Notify {
 				state varchar(100) NOT NULL DEFAULT '',
 				city varchar(190) NOT NULL DEFAULT '',
 				status varchar(32) NOT NULL,
+				claim_token varchar(36) NOT NULL DEFAULT '',
+				attempts smallint unsigned NOT NULL DEFAULT 0,
+				error_kind varchar(32) NOT NULL DEFAULT '',
 				action_id bigint(20) unsigned NOT NULL DEFAULT 0,
 				scheduled_at_gmt datetime NULL,
 				last_error text NULL,
@@ -107,7 +118,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$this->recipient_tracking_table_ready = null;
 
-		if ( $this->recipient_tracking_table_exists() ) {
+		if ( $this->recipient_tracking_table_exists() && count( array_intersect( [ 'claim_token', 'attempts', 'error_kind' ], $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $table_name ) ) ) ) === 3 ) {
 			$this->recipient_tracking_table_ready = true;
 			update_option( self::OPTION_TRACKING_SCHEMA, self::RECIPIENT_TRACKING_SCHEMA, false );
 		}
@@ -120,6 +131,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	public function deactivate() {
+		$this->recovery_enabled = false;
 		wp_unschedule_hook( self::ACTION_RECONCILE_CAMPAIGNS );
 		wp_unschedule_hook( self::ACTION_SEND_SINGLE_EMAIL );
 
@@ -138,7 +150,14 @@ class YOOHW_AN_Customer_Email_Notify {
 				__( 'Plugin deactivated before delivery.', 'yoohw-advanced-notifications' ),
 				current_time( 'mysql', true )
 			) );
-			$this->reconcile_open_campaigns();
+			foreach ( $this->get_campaign_history() as $campaign ) {
+				$unfinished_preparation = empty( $campaign['preparation_complete'] ) && is_array( $this->read_durable_option( $this->campaign_manifest_key( $campaign['campaign_id'] ) ) );
+				if ( $unfinished_preparation || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
+					$campaign['status'] = 'cancelled';
+					$campaign['cancelled'] = true;
+					$this->save_campaign_record( $campaign );
+				}
+			}
 		}
 	}
 
@@ -153,7 +172,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 			$status = isset( $campaign['status'] ) ? sanitize_key( $campaign['status'] ) : '';
 
-			if ( ! in_array( $status, [ 'dispatching', 'queueing', 'queued', 'scheduling', 'scheduled', 'processing' ], true ) ) {
+			if ( ! in_array( $status, [ 'preparing', 'needs_attention', 'dispatching', 'queue_failed', 'schedule_failed', 'queueing', 'queued', 'scheduling', 'scheduled', 'processing', 'completed_with_errors' ], true ) ) {
 				continue;
 			}
 
@@ -233,12 +252,12 @@ class YOOHW_AN_Customer_Email_Notify {
 			VALUES (%s, %s, %s, %s, %d, %s, %s, %s)
 			ON DUPLICATE KEY UPDATE
 				status = CASE
-					WHEN status = 'sent' AND VALUES(status) <> 'sent' THEN status
+					WHEN status IN ('sent','processing','unknown','failed','skipped','skipped_unsubscribed','cancelled') THEN status
 					ELSE VALUES(status)
 				END,
 				action_id = CASE WHEN VALUES(action_id) > 0 THEN VALUES(action_id) ELSE action_id END,
 				last_error = CASE
-					WHEN status = 'sent' AND VALUES(status) <> 'sent' THEN last_error
+					WHEN status IN ('sent','processing','unknown','failed','skipped','skipped_unsubscribed','cancelled') THEN last_error
 					ELSE VALUES(last_error)
 				END,
 				updated_at = VALUES(updated_at)",
@@ -322,7 +341,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		return $statuses;
 	}
 
-	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients ) {
+	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients, $reference_time = null ) {
 		$payload      = is_array( $payload ) ? $payload : [];
 		$campaign_id = isset( $payload['campaign_id'] ) ? sanitize_text_field( $payload['campaign_id'] ) : '';
 		$delivery_id = ! empty( $payload['delivery_id'] ) ? sanitize_text_field( $payload['delivery_id'] ) : $campaign_id;
@@ -357,12 +376,12 @@ class YOOHW_AN_Customer_Email_Notify {
 			$last_error       = '';
 
 			if ( $this->is_payload_scheduled( $payload ) ) {
-				$schedule = $this->get_recipient_scheduled_delivery( $payload, $recipient );
+				$schedule = $this->get_recipient_scheduled_delivery( $payload, $recipient, true, $reference_time );
 
 				if ( empty( $schedule['timestamp'] ) ) {
-					$status           = 'schedule_failed';
+					$status           = 'failed';
 					$scheduled_at_gmt = $now;
-					$last_error       = $this->format_schedule_log_message( $schedule, __( 'Invalid scheduled date/time.', 'yoohw-advanced-notifications' ) );
+					$last_error       = $this->format_schedule_log_message( $schedule, __( 'Invalid scheduled date/time. Create a new campaign with a valid time.', 'yoohw-advanced-notifications' ) );
 					$invalid++;
 				} else {
 					$scheduled_at_gmt = gmdate( 'Y-m-d H:i:s', absint( $schedule['timestamp'] ) );
@@ -412,28 +431,8 @@ class YOOHW_AN_Customer_Email_Notify {
 				(campaign_id,delivery_id,email_hash,email,recipient_name,country,state,city,status,action_id,scheduled_at_gmt,last_error,created_at,updated_at)
 				VALUES " . implode( ',', $placeholders ) . "
 				ON DUPLICATE KEY UPDATE
-					email = VALUES(email),
-					recipient_name = VALUES(recipient_name),
-					country = VALUES(country),
-					state = VALUES(state),
-					city = VALUES(city),
-					status = CASE
-						WHEN status IN ('sent','scheduled','queued','skipped','skipped_unsubscribed') THEN status
-						ELSE VALUES(status)
-					END,
-					action_id = CASE
-						WHEN status IN ('sent','scheduled','queued','skipped','skipped_unsubscribed') THEN action_id
-						ELSE 0
-					END,
-					scheduled_at_gmt = CASE
-						WHEN status IN ('sent','scheduled','queued','skipped','skipped_unsubscribed') THEN scheduled_at_gmt
-						ELSE VALUES(scheduled_at_gmt)
-					END,
-					last_error = CASE
-						WHEN status IN ('sent','scheduled','queued','skipped','skipped_unsubscribed') THEN last_error
-						ELSE VALUES(last_error)
-					END,
-					updated_at = VALUES(updated_at)";
+					email = IF(email = '', VALUES(email), email),
+					recipient_name = IF(recipient_name = '', VALUES(recipient_name), recipient_name)";
 
 			// The SQL consists only of the fixed statement and repeated literal placeholders above. All values, including the table identifier, are prepared.
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared bulk placeholders in the custom delivery table; uncached writes keep worker status current.
@@ -472,41 +471,24 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function update_tracking_row_state( $campaign_id, $delivery_id, $email_hash, $status, $action_id = 0, $message = '' ) {
 		global $wpdb;
-
-		if ( ! $this->recipient_tracking_table_exists() ) {
-			return false;
-		}
-
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
-		return false !== $wpdb->update(
-			$this->get_recipient_tracking_table_name(),
-			[
-				'status'     => sanitize_key( $status ),
-				'action_id'  => absint( $action_id ),
-				'last_error' => sanitize_text_field( $message ),
-				'updated_at' => current_time( 'mysql', true ),
-			],
-			[
-				'campaign_id' => sanitize_text_field( $campaign_id ),
-				'delivery_id' => sanitize_text_field( $delivery_id ),
-				'email_hash'  => sanitize_text_field( $email_hash ),
-			],
-			[ '%s', '%d', '%s', '%s' ],
-			[ '%s', '%s', '%s' ]
-		);
+		// A late scheduler result must never overwrite a worker or a final outcome.
+		return false !== $wpdb->query( $wpdb->prepare(
+			"UPDATE %i SET status = %s, action_id = %d, last_error = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed') AND claim_token = ''",
+			$this->get_recipient_tracking_table_name(), $status, $action_id, $message, current_time( 'mysql', true ), $campaign_id, $delivery_id, $email_hash
+		) );
 	}
 
 	public function dispatch_campaign_batch( $campaign_id ) {
 		$campaign_id = sanitize_text_field( $campaign_id );
-		$lock_key    = 'yoohw_an_dispatch_' . md5( $campaign_id );
-
-		if ( empty( $campaign_id ) || get_transient( $lock_key ) ) {
+		if ( empty( $campaign_id ) || ! $this->acquire_campaign_lock( $campaign_id ) ) {
 			return;
 		}
 
-		set_transient( $lock_key, 1, 5 * MINUTE_IN_SECONDS );
-
 		try {
+			$manifest = $this->read_durable_option( $this->campaign_manifest_key( $campaign_id ) );
+			if ( is_array( $manifest ) && ! $this->resume_campaign_preparation( $campaign_id, $manifest ) ) {
+				return;
+			}
 			$campaigns = $this->get_campaign_history();
 
 			if ( empty( $campaigns[ $campaign_id ] ) ) {
@@ -518,12 +500,18 @@ class YOOHW_AN_Customer_Email_Notify {
 			$payload     = $this->get_campaign_reschedule_payload( $campaign );
 
 			if ( is_wp_error( $payload ) ) {
+				$campaign['dispatch_error'] = $payload->get_error_message();
+				$campaign['status'] = 'needs_attention';
+				$this->save_campaign_record( $campaign );
 				return;
 			}
 
 			$payload_reference = $this->store_campaign_email_payload( $payload );
 
 			if ( is_wp_error( $payload_reference ) ) {
+				$campaign['dispatch_error'] = $payload_reference->get_error_message();
+				$campaign['status'] = 'needs_attention';
+				$this->save_campaign_record( $campaign );
 				return;
 			}
 
@@ -535,7 +523,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				$wpdb->prepare(
 					"SELECT email_hash,email,recipient_name,country,state,city,scheduled_at_gmt
 					FROM %i
-					WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending'
+					WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3
 					ORDER BY id ASC
 					LIMIT %d",
 					$table_name,
@@ -554,9 +542,13 @@ class YOOHW_AN_Customer_Email_Notify {
 					'state'   => isset( $row['state'] ) ? $this->normalize_location_part( $row['state'] ) : '',
 					'city'    => isset( $row['city'] ) ? $this->normalize_location_part( $row['city'] ) : '',
 				];
+				// Reserve the attempt before job storage: a process can stop between those writes.
+				if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + 1 WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status = 'dispatch_pending' AND attempts < 3", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) ) ) {
+					continue;
+				}
 				$args = $this->build_email_action_args( $payload, $recipient, $payload_reference );
 
-				if ( $this->is_payload_scheduled( $payload ) ) {
+				if ( ! empty( $row['scheduled_at_gmt'] ) && strtotime( $row['scheduled_at_gmt'] . ' UTC' ) > time() ) {
 					$scheduled_at = ! empty( $row['scheduled_at_gmt'] ) ? strtotime( $row['scheduled_at_gmt'] . ' UTC' ) : 0;
 					$result       = $this->schedule_email_action( $args, $scheduled_at );
 					$status       = is_wp_error( $result ) ? 'schedule_failed' : 'scheduled';
@@ -575,26 +567,10 @@ class YOOHW_AN_Customer_Email_Notify {
 				);
 			}
 
-			$remaining = absint(
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
-				$wpdb->get_var(
-					$wpdb->prepare(
-						"SELECT COUNT(*) FROM %i
-						WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending'",
-						$table_name,
-						$campaign_id,
-						$delivery_id
-					)
-				)
-			);
-
 			$this->reconcile_campaign_status( $campaign_id );
 
-			if ( $remaining > 0 ) {
-				$this->enqueue_campaign_dispatch( $campaign_id );
-			}
 		} finally {
-			delete_transient( $lock_key );
+			$this->release_campaign_lock( $campaign_id );
 		}
 	}
 
@@ -609,32 +585,34 @@ class YOOHW_AN_Customer_Email_Notify {
 		}
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT status, COUNT(*) AS total
-				FROM %i
-				WHERE hook = %s AND args LIKE %s
-				GROUP BY status",
-				$table_name,
-				self::ACTION_SEND_SINGLE_EMAIL,
-				'%' . $wpdb->esc_like( sanitize_text_field( $campaign_id ) ) . '%'
-			),
-			ARRAY_A
-		);
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT status,args,extended_args FROM %i WHERE hook = %s AND (args LIKE %s OR extended_args LIKE %s)",
+			$table_name, self::ACTION_SEND_SINGLE_EMAIL,
+			'%' . $wpdb->esc_like( $campaign_id ) . '%', '%' . $wpdb->esc_like( $campaign_id ) . '%'
+		), ARRAY_A );
 		$counts = [];
-
 		foreach ( (array) $rows as $row ) {
-			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : '';
-
-			if ( '' !== $status ) {
-				$counts[ $status ] = absint( isset( $row['total'] ) ? $row['total'] : 0 );
-			}
+			$args = json_decode( $row['extended_args'] ?: $row['args'], true );
+			if ( $campaign_id !== ( $args[0]['campaign_id'] ?? '' ) ) { continue; }
+			$counts[ $row['status'] ] = ( $counts[ $row['status'] ] ?? 0 ) + 1;
 		}
 
 		return $counts;
 	}
 
 	private function reconcile_campaign_status( $campaign_id ) {
+		if ( ! $this->acquire_campaign_lock( $campaign_id ) ) {
+			return [];
+		}
+		try {
+			$this->resume_campaign_preparation( $campaign_id );
+			return $this->reconcile_campaign_status_locked( $campaign_id );
+		} finally {
+			$this->release_campaign_lock( $campaign_id );
+		}
+	}
+
+	private function reconcile_campaign_status_locked( $campaign_id ) {
 		$campaign_id = sanitize_text_field( $campaign_id );
 		$campaigns   = $this->get_campaign_history();
 
@@ -645,11 +623,13 @@ class YOOHW_AN_Customer_Email_Notify {
 		$campaign      = $campaigns[ $campaign_id ];
 		$delivery_id   = ! empty( $campaign['delivery_id'] ) ? sanitize_text_field( $campaign['delivery_id'] ) : $campaign_id;
 		$recipient_count = isset( $campaign['recipient_count'] ) ? absint( $campaign['recipient_count'] ) : 0;
+		$this->recover_campaign_recipients( $campaign );
 		$tracking_counts = $this->get_recipient_tracking_counts( $campaign_id, $delivery_id );
 		$action_counts = $this->get_campaign_action_status_counts( $campaign_id );
 		$pending_actions = isset( $action_counts['pending'] ) ? absint( $action_counts['pending'] ) : 0;
 		$dispatch_pending = isset( $tracking_counts['dispatch_pending'] ) ? absint( $tracking_counts['dispatch_pending'] ) : 0;
 		$tracked_total = array_sum( $tracking_counts );
+		$recipient_count = max( $recipient_count, $tracked_total );
 		$terminal_statuses = [
 			'sent',
 			'failed',
@@ -673,41 +653,52 @@ class YOOHW_AN_Customer_Email_Notify {
 			$error_total += isset( $tracking_counts[ $error_status ] ) ? absint( $tracking_counts[ $error_status ] ) : 0;
 		}
 
-		$created_at = ! empty( $campaign['created_at'] ) ? absint( $campaign['created_at'] ) : time();
-		$due_at     = ! empty( $campaign['scheduled_at_timestamp'] )
-			? absint( $campaign['scheduled_at_timestamp'] ) + ( 2 * DAY_IN_SECONDS )
-			: $created_at + ( 30 * MINUTE_IN_SECONDS );
-		$is_past_due = time() >= $due_at;
-		$status      = isset( $campaign['status'] ) ? sanitize_key( $campaign['status'] ) : '';
-		$schedule_mode = isset( $campaign['schedule_mode'] ) ? sanitize_key( $campaign['schedule_mode'] ) : 'now';
-		$unresolved  = 0;
-
-		if ( $dispatch_pending > 0 ) {
-			$status = 'dispatching';
-		} elseif ( $pending_actions > 0 ) {
-			$status = $terminal_total > 0 ? 'processing' : ( 'scheduled' === $schedule_mode ? 'scheduled' : 'queued' );
-		} elseif ( ! $is_past_due && $terminal_total < $recipient_count ) {
-			$status = 'scheduled' === $schedule_mode ? 'scheduled' : 'processing';
-		} elseif ( $tracked_total > 0 ) {
-			$unresolved = max( 0, $recipient_count - $terminal_total );
-			$status     = ( $error_total > 0 || $unresolved > 0 ) ? 'completed_with_errors' : 'completed';
+		global $wpdb;
+		$overdue = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND status IN ('queued','scheduled') AND updated_at < %s AND (scheduled_at_gmt IS NULL OR scheduled_at_gmt < %s)",
+			$this->get_recipient_tracking_table_name(), $campaign_id, gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS ), gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS )
+		) );
+		$eligible_dispatch = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3",
+			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id
+		) );
+		$pending_recipients = ( $tracking_counts['processing'] ?? 0 ) + ( $tracking_counts['queued'] ?? 0 ) + ( $tracking_counts['scheduled'] ?? 0 );
+		$unresolved = max( 0, $recipient_count - $tracked_total );
+		$campaign['recovery_message'] = '';
+		if ( ! empty( $campaign['dispatch_error'] ) ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = $campaign['dispatch_error'];
+		} elseif ( $dispatch_pending > 0 && 0 === $eligible_dispatch ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = __( 'Recipient preparation reached the limit of 3 queue attempts. Check Scheduled Actions for jobs saved before the interruption. Existing jobs may finish; recovery will not create further jobs for these recipients.', 'yoohw-advanced-notifications' );
+		} elseif ( $eligible_dispatch > 0 ) {
+			$has_dispatch = function_exists( 'as_get_scheduled_actions' ) && as_get_scheduled_actions( [ 'hook' => self::ACTION_DISPATCH_CAMPAIGN, 'args' => [ $campaign_id ], 'status' => 'pending', 'per_page' => 1 ], 'ids' );
+			$dispatch_id = $has_dispatch ? 1 : $this->enqueue_campaign_dispatch( $campaign_id );
+			$status = $dispatch_id ? 'dispatching' : 'needs_attention';
+			if ( ! $dispatch_id ) {
+				$campaign['recovery_message'] = __( 'Dispatcher could not be queued. Check Action Scheduler, then use Recover / retry eligible recipients.', 'yoohw-advanced-notifications' );
+			}
+		} elseif ( $pending_recipients > 0 || $pending_actions > 0 && 0 === $tracked_total ) {
+			$status = ! empty( $tracking_counts['processing'] ) ? 'processing' : ( ! empty( $tracking_counts['scheduled'] ) ? 'scheduled' : 'queued' );
 		} else {
-			$legacy_counts = isset( $campaign['status_counts'] ) && is_array( $campaign['status_counts'] )
-				? $this->sanitize_count_map( $campaign['status_counts'] )
-				: [];
-			$legacy_terminal = ( isset( $legacy_counts['sent'] ) ? absint( $legacy_counts['sent'] ) : 0 )
-				+ ( isset( $legacy_counts['failed'] ) ? absint( $legacy_counts['failed'] ) : 0 )
-				+ ( isset( $legacy_counts['skipped'] ) ? absint( $legacy_counts['skipped'] ) : 0 )
-				+ ( isset( $legacy_counts['skipped_unsubscribed'] ) ? absint( $legacy_counts['skipped_unsubscribed'] ) : 0 )
-				+ ( isset( $legacy_counts['skipped_duplicate'] ) ? absint( $legacy_counts['skipped_duplicate'] ) : 0 );
-			$legacy_errors = ( isset( $legacy_counts['failed'] ) ? absint( $legacy_counts['failed'] ) : 0 )
-				+ ( isset( $legacy_counts['schedule_failed'] ) ? absint( $legacy_counts['schedule_failed'] ) : 0 )
-				+ ( isset( $legacy_counts['queue_failed'] ) ? absint( $legacy_counts['queue_failed'] ) : 0 );
-
-			$unresolved = max( 0, $recipient_count - $legacy_terminal );
-			$status     = ( $legacy_errors > 0 || $unresolved > 0 ) ? 'completed_with_errors' : 'completed';
+			$status = $error_total > 0 ? 'completed_with_errors' : 'completed';
+		}
+		if ( ! empty( $campaign['audience_incomplete'] ) || $unresolved > 0 || ( 0 === $tracked_total && empty( $campaign['preparation_complete'] ) ) ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = __( 'Recipient snapshot is incomplete. Recovery uses only saved recipients; it cannot recreate a lost historical audience. Review the stored records before creating a new campaign.', 'yoohw-advanced-notifications' );
+		}
+		if ( $overdue > 0 && $pending_recipients > 0 ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = __( 'Delivery jobs are overdue. Check WordPress cron and WooCommerce Scheduled Actions. Existing pending jobs are retained; recovery will not create another send while they remain pending.', 'yoohw-advanced-notifications' );
+		}
+		if ( ! empty( $tracking_counts['unknown'] ) ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = __( 'Some outcomes are unknown. Check the mail provider logs before creating another campaign for those addresses. Recovery never resends unknown outcomes.', 'yoohw-advanced-notifications' );
+		} elseif ( $error_total > 0 ) {
+			$campaign['recovery_message'] = __( 'Review recipient reasons below. Queue failures retry at least 5 minutes apart, up to 3 queue attempts. Correct configuration failures before recovery. Cancelled recipients require a new campaign.', 'yoohw-advanced-notifications' );
 		}
 
+		$campaign['recipient_count']         = $recipient_count;
 		$campaign['status']                  = $status;
 		$campaign['tracking_counts']         = $tracking_counts;
 		$campaign['tracked_recipient_count'] = $tracked_total;
@@ -717,7 +708,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$campaign['reconciled_at']           = time();
 		$campaigns[ $campaign_id ]           = $campaign;
 
-		$this->save_campaign_history( $campaigns );
+		$this->save_campaign_record( $campaign );
 
 		return $campaign;
 	}
@@ -899,7 +890,7 @@ class YOOHW_AN_Customer_Email_Notify {
 					<p>
 						<?php
 						echo absint( $_GET['test_sent'] ) // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed.
-							? esc_html__( 'Test email sent successfully.', 'yoohw-advanced-notifications' )
+							? esc_html__( 'Test email handed to the mail system. Inbox delivery is not verified.', 'yoohw-advanced-notifications' )
 							: esc_html__( 'Test email could not be sent.', 'yoohw-advanced-notifications' );
 						?>
 					</p>
@@ -1295,6 +1286,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 			<?php $this->render_page_tabs( 'campaigns' ); ?>
 			<?php $this->render_campaign_reschedule_notices(); ?>
+			<p><?php esc_html_e( 'Handed to mail system means the sending request was accepted, not that the email reached an inbox. Queue failures retry automatically up to 3 attempts, at least 5 minutes apart. Known pre-transport failures require correcting the reported data or configuration, then recovery. Unknown outcomes require checking the mail provider before deciding to create a new campaign.', 'yoohw-advanced-notifications' ); ?></p>
 
 			<ul class="subsubsub yoohw-advanced-notifications-subtabs">
 				<?php foreach ( $subtabs as $view_key => $view ) : ?>
@@ -1547,6 +1539,9 @@ class YOOHW_AN_Customer_Email_Notify {
 							</tbody>
 						</table>
 						<?php
+						if ( ! empty( $selected_campaign['recovery_message'] ) ) {
+							echo '<p class="notice notice-warning inline">' . esc_html( $selected_campaign['recovery_message'] ) . '</p>';
+						}
 						$selected_counts        = isset( $selected_campaign['status_counts'] ) && is_array( $selected_campaign['status_counts'] )
 							? $this->sanitize_count_map( $selected_campaign['status_counts'] )
 							: [];
@@ -1564,7 +1559,7 @@ class YOOHW_AN_Customer_Email_Notify {
 									<?php wp_nonce_field( self::ACTION_RESCHEDULE_FAILED . '_' . $selected_campaign_id, 'yoohw_an_reschedule_nonce' ); ?>
 									<?php
 									submit_button(
-										__( 'Reschedule failed email(s)', 'yoohw-advanced-notifications' ),
+										__( 'Recover / retry eligible recipients', 'yoohw-advanced-notifications' ),
 										'secondary',
 										'submit',
 										false
@@ -1574,7 +1569,7 @@ class YOOHW_AN_Customer_Email_Notify {
 										<?php
 										echo esc_html(
 											sprintf(
-												/* translators: %d: Number of scheduling failures. */ __( '%d historical schedule failure(s) found. This action retries only addresses that do not already have a newer scheduled, queued, sent, skipped, or unsubscribed event.', 'yoohw-advanced-notifications' ),
+												/* translators: %d: Number of scheduling failures. */ __( '%d eligible recipient(s). Recovery continues preparation and retries queue failures or known pre-transport failures, up to 3 attempts. Unknown outcomes are never retried. Unsubscribes are checked again.', 'yoohw-advanced-notifications' ),
 												$schedule_failed_count
 											)
 										);
@@ -2136,7 +2131,9 @@ class YOOHW_AN_Customer_Email_Notify {
 			);
 		}
 
-		$this->add_unsubscribed_email( $email, $campaign_id );
+		if ( ! $this->add_unsubscribed_email( $email, $campaign_id ) ) {
+			wp_die( esc_html__( 'Your unsubscribe could not be saved. Please try this link again.', 'yoohw-advanced-notifications' ), '', [ 'response' => 503 ] );
+		}
 		do_action( 'yoohw_an_unsubscribed', $email, $campaign_id );
 		$this->log_campaign_event( $campaign_id, $email, 'unsubscribed' );
 
@@ -2218,155 +2215,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			'yoohw_an_reschedule_nonce'
 		);
 
-		$redirect_args = [
-			'page'        => 'yoohw-advanced-notifications',
-			'tab'         => 'campaigns',
-			'view'        => 'logs',
-			'campaign_id' => $campaign_id,
-		];
-
-		$campaigns = $this->get_campaign_history();
-
-		if ( empty( $campaign_id ) || empty( $campaigns[ $campaign_id ] ) ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'missing_campaign' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$retry_availability = $this->get_schedule_retry_availability( $campaigns[ $campaign_id ] );
-
-		if ( empty( $retry_availability['available'] ) ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'missing_recipient_state' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$payload = $this->get_campaign_reschedule_payload( $campaigns[ $campaign_id ] );
-		if ( ! is_wp_error( $payload ) ) {
-			$options_valid = $this->validate_recipient_source_options( $payload );
-			if ( is_wp_error( $options_valid ) ) {
-				wp_die( esc_html( $options_valid->get_error_message() ) );
-			}
-		}
-
-		if ( is_wp_error( $payload ) ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'missing_payload' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$payload_reference = $this->store_campaign_email_payload( $payload );
-
-		if ( is_wp_error( $payload_reference ) ) {
-			$this->log_campaign_event(
-				$campaign_id,
-				'',
-				'schedule_failed',
-				$payload_reference->get_error_message()
-			);
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'payload_store_failed' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$payload['payload_key']  = $payload_reference['payload_key'];
-		$payload['payload_hash'] = $payload_reference['payload_hash'];
-
-		$recipients = $this->get_schedule_failed_recipients_for_campaign( $campaign_id, $payload, $campaigns[ $campaign_id ] );
-
-		if ( empty( $recipients ) ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'no_recipients' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$retry_recipients = [];
-		foreach ( $recipients as $recipient ) {
-			$to = isset( $recipient['email'] ) ? sanitize_email( $recipient['email'] ) : '';
-
-			if ( empty( $to ) || ! is_email( $to ) ) {
-				continue;
-			}
-
-			if ( $this->is_email_unsubscribed( $to ) ) {
-				$this->log_campaign_event(
-					$campaign_id,
-					$to,
-					'skipped_unsubscribed',
-					__( 'Recipient unsubscribed before schedule retry.', 'yoohw-advanced-notifications' )
-				);
-				continue;
-			}
-
-			$retry_recipients[] = $recipient;
-		}
-
-		$prepared = $this->prepare_campaign_recipients_for_dispatch( $payload, $retry_recipients );
-
-		if ( is_wp_error( $prepared ) ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'dispatch_store_failed' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$dispatch_action_id = $this->enqueue_campaign_dispatch( $campaign_id );
-
-		if ( ! $dispatch_action_id ) {
-			wp_safe_redirect(
-				add_query_arg(
-					array_merge( $redirect_args, [ 'reschedule_error' => 'dispatch_enqueue_failed' ] ),
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$this->record_campaign_snapshot(
-			$payload,
-			'dispatching',
-			[
-				'recipient_count' => isset( $campaigns[ $campaign_id ]['recipient_count'] ) ? absint( $campaigns[ $campaign_id ]['recipient_count'] ) : 0,
-				'scheduled_count' => isset( $campaigns[ $campaign_id ]['scheduled_count'] ) ? absint( $campaigns[ $campaign_id ]['scheduled_count'] ) : 0,
-				'dispatch_action_id' => $dispatch_action_id,
-				'dispatch_pending_count' => isset( $prepared['dispatch_pending'] ) ? absint( $prepared['dispatch_pending'] ) : 0,
-			]
-		);
-
-		wp_safe_redirect(
-			add_query_arg(
-				array_merge(
-					$redirect_args,
-					[
-						'dispatching_retry' => isset( $prepared['dispatch_pending'] ) ? absint( $prepared['dispatch_pending'] ) : 0,
-					]
-				),
-				admin_url( 'admin.php' )
-			)
-		);
+		$this->retry_campaign( $campaign_id );
+		wp_safe_redirect( $this->get_admin_page_url( [ 'tab' => 'campaigns', 'view' => 'logs', 'campaign_id' => $campaign_id ] ) );
 		exit;
 	}
 
@@ -2508,157 +2358,13 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$customers = $this->get_recipients_by_payload( $payload );
 
-		if ( empty( $customers ) ) {
-			$this->delete_preview_payload( isset( $preview_token ) ? $preview_token : '' );
-			$this->record_campaign_snapshot(
-				$payload,
-				'empty',
-				[
-					'recipient_count' => 0,
-				]
-			);
-
-			wp_safe_redirect(
-				add_query_arg(
-					[
-						'page' => 'yoohw-advanced-notifications',
-						'sent' => 0,
-					],
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
+		$result = $this->confirm_campaign( $payload, $customers );
+		if ( is_wp_error( $result ) ) {
+			wp_die( esc_html( $result->get_error_message() ), '', [ 'response' => 503 ] );
 		}
-
-		$campaign_lock_id = ! empty( $payload['delivery_id'] ) ? $payload['delivery_id'] : $payload['campaign_hash'];
-		$campaign_lock    = get_transient( $this->get_campaign_lock_key( $campaign_lock_id ) );
-
-		if ( false !== $campaign_lock ) {
-			$this->delete_preview_payload( isset( $preview_token ) ? $preview_token : '' );
-			$this->record_campaign_snapshot(
-				$payload,
-				'duplicate_blocked',
-				[
-					'recipient_count' => count( $customers ),
-				]
-			);
-			$this->log_campaign_event(
-				$payload['campaign_id'],
-				'',
-				'duplicate_blocked',
-				__( 'Duplicate submission blocked by campaign lock.', 'yoohw-advanced-notifications' )
-			);
-
-			wp_safe_redirect(
-				add_query_arg(
-					[
-						'page'      => 'yoohw-advanced-notifications',
-						'duplicate' => is_array( $campaign_lock ) && isset( $campaign_lock['count'] )
-							? absint( $campaign_lock['count'] )
-							: count( $customers ),
-					],
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		set_transient(
-			$this->get_campaign_lock_key( $campaign_lock_id ),
-			[
-				'count'     => count( $customers ),
-				'queued_at' => time(),
-			],
-			$this->get_campaign_lock_ttl( $payload )
-		);
-
 		$is_scheduled_campaign = $this->is_payload_scheduled( $payload );
-		$payload_reference     = $this->store_campaign_email_payload( $payload );
-
-		if ( is_wp_error( $payload_reference ) ) {
-			$this->delete_preview_payload( isset( $preview_token ) ? $preview_token : '' );
-			delete_transient( $this->get_campaign_lock_key( $campaign_lock_id ) );
-			$this->record_campaign_snapshot(
-				$payload,
-				$is_scheduled_campaign ? 'schedule_failed' : 'queue_failed',
-				[
-					'recipient_count' => count( $customers ),
-				]
-			);
-			$this->log_campaign_event(
-				$payload['campaign_id'],
-				'',
-				$is_scheduled_campaign ? 'schedule_failed' : 'queue_failed',
-				$payload_reference->get_error_message()
-			);
-			wp_safe_redirect(
-				add_query_arg(
-					[
-						'page'                    => 'yoohw-advanced-notifications',
-						'campaign_payload_failed' => 1,
-					],
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$payload['payload_key']  = $payload_reference['payload_key'];
-		$payload['payload_hash'] = $payload_reference['payload_hash'];
-
-		$this->record_campaign_snapshot(
-			$payload,
-			'dispatching',
-			[
-				'recipient_count' => count( $customers ),
-			]
-		);
-
-		$prepared = $this->prepare_campaign_recipients_for_dispatch( $payload, $customers );
-
-		if ( is_wp_error( $prepared ) ) {
-			$this->delete_preview_payload( isset( $preview_token ) ? $preview_token : '' );
-			delete_transient( $this->get_campaign_lock_key( $campaign_lock_id ) );
-			$this->record_campaign_snapshot(
-				$payload,
-				$is_scheduled_campaign ? 'schedule_failed' : 'queue_failed',
-				[ 'recipient_count' => count( $customers ) ]
-			);
-			$this->log_campaign_event(
-				$payload['campaign_id'],
-				'',
-				$is_scheduled_campaign ? 'schedule_failed' : 'queue_failed',
-				$prepared->get_error_message()
-			);
-			wp_safe_redirect(
-				add_query_arg(
-					[
-						'page'                     => 'yoohw-advanced-notifications',
-						'campaign_dispatch_failed' => 1,
-					],
-					admin_url( 'admin.php' )
-				)
-			);
-			exit;
-		}
-
-		$dispatch_action_id = $this->enqueue_campaign_dispatch( $payload['campaign_id'] );
-		$campaign_status    = $dispatch_action_id ? 'dispatching' : ( $is_scheduled_campaign ? 'schedule_failed' : 'queue_failed' );
-
+		$prepared = [ 'dispatch_pending' => count( $customers ) ];
 		$this->delete_preview_payload( isset( $preview_token ) ? $preview_token : '' );
-
-		$this->record_campaign_snapshot(
-			$payload,
-			$campaign_status,
-			[
-				'recipient_count' => count( $customers ),
-				'queued_count'    => 0,
-				'scheduled_count' => 0,
-				'sent_count'      => 0,
-				'dispatch_action_id' => $dispatch_action_id,
-				'dispatch_pending_count' => isset( $prepared['dispatch_pending'] ) ? absint( $prepared['dispatch_pending'] ) : 0,
-			]
-		);
 
 		$query_args = [
 			'page'        => 'yoohw-advanced-notifications',
@@ -2737,11 +2443,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			'payload'      => $email_payload,
 			'created_at'   => time(),
 		];
-		$existing     = get_option( $payload_key, false );
+		$existing     = $this->read_durable_option( $payload_key );
 
-		if ( false === $existing ) {
-			$stored   = add_option( $payload_key, $record, '', 'no' );
-			$existing = $stored ? $record : get_option( $payload_key, false );
+		if ( null === $existing ) {
+			$stored   = $this->write_durable_option( $payload_key, $record, true );
+			$existing = $stored ? $record : $this->read_durable_option( $payload_key );
 		}
 
 		if (
@@ -3132,10 +2838,6 @@ class YOOHW_AN_Customer_Email_Notify {
 		return self::PREVIEW_TRANSIENT_PREFIX . md5( $preview_token );
 	}
 
-	private function get_campaign_lock_key( $delivery_id ) {
-		return self::CAMPAIGN_LOCK_PREFIX . substr( sanitize_key( $delivery_id ), 0, 32 );
-	}
-
 	private function get_admin_page_url( $args = [] ) {
 		return add_query_arg(
 			array_merge(
@@ -3312,16 +3014,35 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$campaigns[ $campaign_id ] = $entry;
 
-		return $this->save_campaign_history( $campaigns );
+		return $this->save_campaign_record( $entry );
 	}
 
 	private function get_campaign_history() {
-		$stored    = get_option( self::OPTION_CAMPAIGNS, [] );
-		$campaigns = [];
-
-		if ( ! is_array( $stored ) ) {
-			return $campaigns;
+		$stored = $this->read_durable_option( self::OPTION_CAMPAIGNS );
+		$stored = is_array( $stored ) ? $stored : [];
+		// Import by overlay, without deleting the old data or requiring a one-shot migration.
+		foreach ( $this->read_durable_options( self::CAMPAIGN_PAYLOAD_PREFIX ) as $record ) {
+			if ( ! is_array( $record ) || empty( $record['campaign_id'] ) || isset( $stored[ $record['campaign_id'] ] ) ) {
+				continue;
+			}
+			$stored[ $record['campaign_id'] ] = array_merge( $record['payload'], [
+				'campaign_id' => $record['campaign_id'], 'delivery_id' => $record['delivery_id'],
+				'status' => 'needs_attention', 'created_at' => $record['created_at'], 'audience_incomplete' => true, 'schedule_mode' => 'now',
+				'recovery_message' => __( 'Recovered campaign content. Only stored recipients and existing jobs can continue. The original audience may be incomplete; review recipient records before creating another campaign.', 'yoohw-advanced-notifications' ),
+			] );
 		}
+		foreach ( $this->read_durable_options( 'yoohw_an_manifest_' ) as $manifest ) {
+			if ( is_array( $manifest ) && ! empty( $manifest['payload']['campaign_id'] ) ) {
+				$id = $manifest['payload']['campaign_id'];
+				$stored[ $id ] = array_merge( $stored[ $id ] ?? [], $manifest['payload'], [ 'status' => 'preparing', 'recipient_count' => count( $manifest['recipients'] ), 'created_at' => $manifest['confirmed_at'] ] );
+			}
+		}
+		foreach ( $this->read_durable_options( 'yoohw_an_record_' ) as $record ) {
+			if ( is_array( $record ) && ! empty( $record['campaign_id'] ) ) {
+				$stored[ $record['campaign_id'] ] = $record;
+			}
+		}
+		$campaigns = [];
 
 		foreach ( $stored as $key => $campaign ) {
 			if ( ! is_array( $campaign ) ) {
@@ -3356,28 +3077,14 @@ class YOOHW_AN_Customer_Email_Notify {
 		uasort(
 			$campaigns,
 			function ( $a, $b ) {
-				return absint( isset( $b['updated_at'] ) ? $b['updated_at'] : 0 ) <=> absint( isset( $a['updated_at'] ) ? $a['updated_at'] : 0 );
+				$closed = [ 'completed', 'empty', 'test_sent', 'test_failed', 'previewed' ];
+				$active_a = ! in_array( $a['status'] ?? '', $closed, true );
+				$active_b = ! in_array( $b['status'] ?? '', $closed, true );
+				return ( $active_b <=> $active_a ) ?: ( absint( $b['updated_at'] ?? 0 ) <=> absint( $a['updated_at'] ?? 0 ) );
 			}
 		);
 
 		return $campaigns;
-	}
-
-	private function save_campaign_history( $campaigns ) {
-		if ( ! is_array( $campaigns ) ) {
-			$campaigns = [];
-		}
-
-		uasort(
-			$campaigns,
-			function ( $a, $b ) {
-				return absint( isset( $b['updated_at'] ) ? $b['updated_at'] : 0 ) <=> absint( isset( $a['updated_at'] ) ? $a['updated_at'] : 0 );
-			}
-		);
-
-		$campaigns = array_slice( $campaigns, 0, self::CAMPAIGN_HISTORY_LIMIT, true );
-
-		return $this->update_nonautoload_option( self::OPTION_CAMPAIGNS, $campaigns );
 	}
 
 	private function store_campaign_log_event( $campaign_id, $email, $status, $message = '', $action_id = 0 ) {
@@ -3634,210 +3341,21 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function get_schedule_retry_availability( $campaign ) {
-		$campaign    = is_array( $campaign ) ? $campaign : [];
-		$campaign_id = isset( $campaign['campaign_id'] ) ? sanitize_text_field( $campaign['campaign_id'] ) : '';
-		$delivery_id = ! empty( $campaign['delivery_id'] ) ? sanitize_text_field( $campaign['delivery_id'] ) : $campaign_id;
-		$tracking_counts = $this->get_recipient_tracking_counts( $campaign_id, $delivery_id );
-
-		if ( ! empty( $tracking_counts ) ) {
-			return [
-				'available' => ! empty( $tracking_counts['schedule_failed'] ),
-				'count'     => isset( $tracking_counts['schedule_failed'] ) ? absint( $tracking_counts['schedule_failed'] ) : 0,
-				'source'    => 'tracking',
-			];
+		global $wpdb;
+		if ( ! empty( $campaign['cancelled'] ) ) {
+			return [ 'available' => false, 'count' => 0, 'source' => 'tracking' ];
 		}
-
-		$campaign_counts = isset( $campaign['status_counts'] ) && is_array( $campaign['status_counts'] )
-			? $this->sanitize_count_map( $campaign['status_counts'] )
-			: [];
-		$expected_count = isset( $campaign_counts['schedule_failed'] ) ? absint( $campaign_counts['schedule_failed'] ) : 0;
-		$logs           = $this->get_campaign_log_entries( $campaign_id, 0 );
-		$failed_emails  = [];
-
-		foreach ( $logs as $log ) {
-			$email  = isset( $log['email'] ) ? strtolower( sanitize_email( $log['email'] ) ) : '';
-			$status = isset( $log['status'] ) ? sanitize_key( $log['status'] ) : '';
-
-			if ( 'schedule_failed' === $status && is_email( $email ) ) {
-				$failed_emails[ $email ] = true;
-			}
+		$id = $campaign['campaign_id'];
+		$count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND attempts < 3 AND (status IN ('dispatch_pending','queue_failed','schedule_failed') OR (status = 'failed' AND error_kind = 'configuration'))",
+			$this->get_recipient_tracking_table_name(), $id
+		) );
+		if ( empty( $campaign['preparation_complete'] ) && is_array( $this->read_durable_option( $this->campaign_manifest_key( $id ) ) ) ) {
+			$count = max( 1, $count );
 		}
-
-		$identified_count = count( $failed_emails );
-
-		return [
-			'available' => $expected_count > 0 && $identified_count >= $expected_count,
-			'count'     => $identified_count,
-			'source'    => 'legacy_logs',
-		];
+		return [ 'available' => $count > 0, 'count' => $count, 'source' => 'tracking' ];
 	}
 
-	private function get_schedule_failed_recipients_for_campaign( $campaign_id, $payload, $campaign = [] ) {
-		$campaign_id       = sanitize_text_field( $campaign_id );
-		$logs              = $this->get_campaign_log_entries( $campaign_id, 0 );
-		$failed_recipients = [];
-		$handled_emails    = [];
-		$reference_time    = $this->get_campaign_schedule_reference_time( $campaign, $logs );
-		$campaign_counts   = isset( $campaign['status_counts'] ) && is_array( $campaign['status_counts'] )
-			? $this->sanitize_count_map( $campaign['status_counts'] )
-			: [];
-		$delivery_id       = ! empty( $campaign['delivery_id'] ) ? sanitize_text_field( $campaign['delivery_id'] ) : $campaign_id;
-		$tracking_statuses  = $this->get_recipient_tracking_status_map( $campaign_id, $delivery_id );
-		$failed_target_count = isset( $campaign_counts['schedule_failed'] ) ? absint( $campaign_counts['schedule_failed'] ) : 0;
-		$handled_statuses  = [
-			'scheduled',
-			'queued',
-			'sent',
-			'skipped',
-			'skipped_unsubscribed',
-			'unsubscribed',
-		];
-
-		if ( empty( $tracking_statuses ) ) {
-			foreach ( $logs as $log ) {
-				$email = isset( $log['email'] ) ? strtolower( sanitize_email( $log['email'] ) ) : '';
-
-				if ( empty( $email ) || ! is_email( $email ) ) {
-					continue;
-				}
-
-				$status = isset( $log['status'] ) ? sanitize_key( $log['status'] ) : '';
-
-				if ( in_array( $status, $handled_statuses, true ) ) {
-					if ( empty( $failed_recipients[ $email ] ) ) {
-						$handled_emails[ $email ] = true;
-					}
-					continue;
-				}
-
-				if ( 'schedule_failed' === $status && empty( $handled_emails[ $email ] ) && empty( $failed_recipients[ $email ] ) ) {
-					$failed_recipients[ $email ] = $this->get_recipient_context_from_schedule_log( $log );
-				}
-			}
-		}
-
-		$current_recipients = $this->get_recipients_by_payload( $payload );
-
-		foreach ( $current_recipients as $recipient ) {
-			$email = isset( $recipient['email'] ) ? strtolower( sanitize_email( $recipient['email'] ) ) : '';
-
-			if ( empty( $email ) ) {
-				continue;
-			}
-
-			if ( ! empty( $tracking_statuses ) ) {
-				$tracked_status = isset( $tracking_statuses[ hash( 'sha256', $email ) ] )
-					? sanitize_key( $tracking_statuses[ hash( 'sha256', $email ) ] )
-					: '';
-
-				if ( 'schedule_failed' === $tracked_status ) {
-					$failed_recipients[ $email ] = $this->sanitize_recipient_context( $recipient );
-				}
-
-				continue;
-			}
-
-			if ( ! empty( $handled_emails[ $email ] ) && empty( $failed_recipients[ $email ] ) ) {
-				continue;
-			}
-
-			if (
-				empty( $failed_recipients[ $email ] ) &&
-				$reference_time > 0 &&
-				( 0 === $failed_target_count || count( $failed_recipients ) < $failed_target_count )
-			) {
-				$original_schedule = $this->get_recipient_scheduled_delivery( $payload, $recipient, false );
-
-				if ( ! empty( $original_schedule['timestamp'] ) && $original_schedule['timestamp'] <= $reference_time ) {
-					$failed_recipients[ $email ] = $this->sanitize_recipient_context( $recipient );
-
-					if ( ! empty( $original_schedule['timezone'] ) ) {
-						$failed_recipients[ $email ]['timezone'] = sanitize_text_field( $original_schedule['timezone'] );
-					}
-				}
-			}
-
-			if ( ! empty( $failed_recipients[ $email ] ) ) {
-				$failed_recipients[ $email ] = $this->merge_recipient_context(
-					$failed_recipients[ $email ],
-					$recipient
-				);
-			}
-		}
-
-		if ( empty( $failed_recipients ) ) {
-			return [];
-		}
-
-		foreach ( $failed_recipients as $email => $recipient ) {
-			$failed_recipients[ $email ] = $this->merge_recipient_context(
-				$recipient,
-				$this->get_recipient_context_by_email( $email )
-			);
-		}
-
-		return array_values( $failed_recipients );
-	}
-
-	private function get_campaign_schedule_reference_time( $campaign, $logs ) {
-		$times = [];
-
-		foreach ( (array) $logs as $log ) {
-			$status = isset( $log['status'] ) ? sanitize_key( $log['status'] ) : '';
-
-			if ( ! in_array( $status, [ 'scheduled', 'schedule_failed' ], true ) ) {
-				continue;
-			}
-
-			if ( ! empty( $log['time'] ) ) {
-				$times[] = absint( $log['time'] );
-			}
-		}
-
-		if ( ! empty( $times ) ) {
-			return min( $times );
-		}
-
-		if ( ! empty( $campaign['created_at'] ) ) {
-			return absint( $campaign['created_at'] );
-		}
-
-		if ( ! empty( $campaign['updated_at'] ) ) {
-			return absint( $campaign['updated_at'] );
-		}
-
-		return time();
-	}
-
-	private function get_recipient_context_from_schedule_log( $log ) {
-		$email   = isset( $log['email'] ) ? sanitize_email( $log['email'] ) : '';
-		$message = isset( $log['message'] ) ? sanitize_text_field( $log['message'] ) : '';
-		$context = [
-			'email'   => $email,
-			'name'    => $email,
-			'country' => '',
-			'state'   => '',
-			'city'    => '',
-		];
-
-		if ( preg_match( '/(?:^|\s)country=([A-Z]{2}|UTC)(?:\s|$)/', $message, $matches ) ) {
-			$context['country'] = 'UTC' === $matches[1] ? '' : $this->normalize_country_code( $matches[1] );
-		}
-
-		if ( preg_match( '/state=(.*?)\s+city=/i', $message, $matches ) ) {
-			$context['state'] = $this->normalize_location_part( $matches[1] );
-		}
-
-		if ( preg_match( '/city=(.*?)\s+timezone=/i', $message, $matches ) ) {
-			$context['city'] = $this->normalize_location_part( $matches[1] );
-		}
-
-		if ( preg_match( '/(?:^|\s)timezone=([A-Za-z0-9_+\-\/]+)(?:\s|$)/', $message, $matches ) ) {
-			$context['timezone'] = sanitize_text_field( $matches[1] );
-		}
-
-		return $context;
-	}
 
 	private function sanitize_recipient_context( $recipient ) {
 		return [
@@ -3848,86 +3366,6 @@ class YOOHW_AN_Customer_Email_Notify {
 			'state'    => isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '',
 			'city'     => isset( $recipient['city'] ) ? $this->normalize_location_part( $recipient['city'] ) : '',
 			'timezone' => isset( $recipient['timezone'] ) ? sanitize_text_field( $recipient['timezone'] ) : '',
-		];
-	}
-
-	private function merge_recipient_context( $recipient, $fallback ) {
-		$recipient = $this->sanitize_recipient_context( $recipient );
-		$fallback  = $this->sanitize_recipient_context( $fallback );
-
-		foreach ( [ 'user_id', 'email', 'name', 'country', 'state', 'city', 'timezone' ] as $key ) {
-			if ( empty( $recipient[ $key ] ) && ! empty( $fallback[ $key ] ) ) {
-				$recipient[ $key ] = $fallback[ $key ];
-			}
-		}
-
-		if (
-			! empty( $fallback['name'] ) &&
-			! empty( $recipient['email'] ) &&
-			$recipient['name'] === $recipient['email'] &&
-			$fallback['name'] !== $recipient['email']
-		) {
-			$recipient['name'] = $fallback['name'];
-		}
-
-		if ( empty( $recipient['name'] ) ) {
-			$recipient['name'] = $recipient['email'];
-		}
-
-		return $recipient;
-	}
-
-	private function get_recipient_context_by_email( $email ) {
-		$email = sanitize_email( $email );
-
-		if ( empty( $email ) || ! is_email( $email ) ) {
-			return [];
-		}
-
-		$user = get_user_by( 'email', $email );
-
-		if ( $user && ! empty( $user->ID ) ) {
-			$user_id = absint( $user->ID );
-
-			return [
-				'user_id' => $user_id,
-				'email'   => $email,
-				'name'    => ! empty( $user->display_name ) ? sanitize_text_field( $user->display_name ) : $email,
-				'country' => $this->normalize_country_code( get_user_meta( $user_id, 'billing_country', true ) ),
-				'state'   => $this->normalize_location_part( get_user_meta( $user_id, 'billing_state', true ) ),
-				'city'    => $this->normalize_location_part( get_user_meta( $user_id, 'billing_city', true ) ),
-			];
-		}
-
-		if ( function_exists( 'wc_get_orders' ) ) {
-			$orders = wc_get_orders(
-				[
-					'limit'         => 1,
-					'billing_email' => $email,
-					'return'        => 'objects',
-					'orderby'       => 'date',
-					'order'         => 'DESC',
-				]
-			);
-
-			if ( ! empty( $orders[0] ) && $orders[0] instanceof WC_Order ) {
-				$order = $orders[0];
-				$name  = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
-
-				return [
-					'user_id' => absint( $order->get_user_id() ),
-					'email'   => $email,
-					'name'    => ! empty( $name ) ? $name : $email,
-					'country' => $this->normalize_country_code( $order->get_billing_country() ),
-					'state'   => $this->normalize_location_part( $order->get_billing_state() ),
-					'city'    => $this->normalize_location_part( $order->get_billing_city() ),
-				];
-			}
-		}
-
-		return [
-			'email' => $email,
-			'name'  => $email,
 		];
 	}
 
@@ -3970,7 +3408,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$campaigns[ $campaign_id ]['status'] = $status;
 		}
 
-		$this->save_campaign_history( $campaigns );
+		$this->save_campaign_record( $campaigns[ $campaign_id ] );
 	}
 
 	private function update_nonautoload_option( $option_name, $value ) {
@@ -4031,6 +3469,9 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function get_campaign_display_status( $campaign ) {
 		$status = isset( $campaign['status'] ) ? sanitize_key( $campaign['status'] ) : '';
+		if ( ! empty( $campaign['tracking_counts'] ) ) {
+			return $status;
+		}
 		$counts = isset( $campaign['status_counts'] ) && is_array( $campaign['status_counts'] )
 			? $this->sanitize_count_map( $campaign['status_counts'] )
 			: [];
@@ -4062,9 +3503,11 @@ class YOOHW_AN_Customer_Email_Notify {
 		$status = sanitize_key( $status );
 
 		$labels = [
+			'preparing'             => __( 'Saving recipient snapshot', 'yoohw-advanced-notifications' ),
+			'needs_attention'       => __( 'Needs attention', 'yoohw-advanced-notifications' ),
 			'previewed'             => __( 'Previewed', 'yoohw-advanced-notifications' ),
 			'test'                  => __( 'Testing', 'yoohw-advanced-notifications' ),
-			'test_sent'             => __( 'Test sent', 'yoohw-advanced-notifications' ),
+			'test_sent'             => __( 'Test handed to mail system', 'yoohw-advanced-notifications' ),
 			'test_failed'           => __( 'Test failed', 'yoohw-advanced-notifications' ),
 			'queueing'              => __( 'Queueing', 'yoohw-advanced-notifications' ),
 			'dispatching'           => __( 'Preparing in background', 'yoohw-advanced-notifications' ),
@@ -4077,7 +3520,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			'processing'            => __( 'Processing', 'yoohw-advanced-notifications' ),
 			'completed'             => __( 'Completed', 'yoohw-advanced-notifications' ),
 			'completed_with_errors' => __( 'Completed with issues', 'yoohw-advanced-notifications' ),
-			'sent'                  => __( 'Sent', 'yoohw-advanced-notifications' ),
+			'sent'                  => __( 'Handed to mail system', 'yoohw-advanced-notifications' ),
 			'failed'                => __( 'Failed', 'yoohw-advanced-notifications' ),
 			'skipped'               => __( 'Skipped', 'yoohw-advanced-notifications' ),
 			'skipped_unsubscribed'  => __( 'Skipped unsubscribed', 'yoohw-advanced-notifications' ),
@@ -4087,7 +3530,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			'empty'                 => __( 'No recipients', 'yoohw-advanced-notifications' ),
 			'cancelled'             => __( 'Cancelled', 'yoohw-advanced-notifications' ),
 			'unresolved'            => __( 'Unresolved', 'yoohw-advanced-notifications' ),
-			'unknown'               => __( 'Unknown', 'yoohw-advanced-notifications' ),
+			'unknown'               => __( 'Outcome unknown', 'yoohw-advanced-notifications' ),
 		];
 
 		return isset( $labels[ $status ] ) ? $labels[ $status ] : ucwords( str_replace( '_', ' ', $status ) );
@@ -4104,11 +3547,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			return 'is-success';
 		}
 
-		if ( in_array( $status, [ 'dispatching', 'queued', 'scheduled', 'processing', 'queueing', 'scheduling' ], true ) ) {
+		if ( in_array( $status, [ 'preparing', 'dispatching', 'queued', 'scheduled', 'processing', 'queueing', 'scheduling' ], true ) ) {
 			return 'is-info';
 		}
 
-		if ( in_array( $status, [ 'skipped', 'skipped_unsubscribed', 'skipped_duplicate', 'duplicate_blocked', 'empty', 'unsubscribed' ], true ) ) {
+		if ( in_array( $status, [ 'needs_attention', 'unknown', 'skipped', 'skipped_unsubscribed', 'skipped_duplicate', 'duplicate_blocked', 'empty', 'unsubscribed' ], true ) ) {
 			return 'is-warning';
 		}
 
@@ -4174,11 +3617,16 @@ class YOOHW_AN_Customer_Email_Notify {
 			'dispatch_pending',
 			'queued',
 			'scheduled',
+			'processing',
+			'unknown',
+			'queue_failed',
+			'cancelled',
 			'sent',
 			'failed',
 			'schedule_failed',
 			'skipped',
 			'skipped_unsubscribed',
+			'skipped_duplicate',
 			'test_sent',
 			'test_failed',
 			'unsubscribed',
@@ -4374,23 +3822,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		);
 	}
 
-	private function get_campaign_lock_ttl( $payload ) {
-		if ( $this->is_payload_scheduled( $payload ) ) {
-			$scheduled_at = isset( $payload['scheduled_at_timestamp'] )
-				? absint( $payload['scheduled_at_timestamp'] )
-				: time();
-
-			if ( $scheduled_at <= time() ) {
-				return DAY_IN_SECONDS;
-			}
-
-			return max( 15 * MINUTE_IN_SECONDS, ( $scheduled_at - time() ) + DAY_IN_SECONDS );
-		}
-
-		return 15 * MINUTE_IN_SECONDS;
-	}
-
-	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true ) {
+	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true, $reference_time = null ) {
+		$reference_time = null === $reference_time ? time() : absint( $reference_time );
 		$country       = isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '';
 		$state         = isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '';
 		$city          = isset( $recipient['city'] ) ? $this->normalize_location_part( $recipient['city'] ) : '';
@@ -4413,7 +3846,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		);
 		$rolled_forward_days = 0;
 
-		while ( $roll_forward && $scheduled_date instanceof DateTimeImmutable && $scheduled_date->getTimestamp() <= time() && $rolled_forward_days < 366 ) {
+		while ( $roll_forward && $scheduled_date instanceof DateTimeImmutable && $scheduled_date->getTimestamp() <= $reference_time && $rolled_forward_days < 366 ) {
 			$scheduled_date = $scheduled_date->modify( '+1 day' );
 			$rolled_forward_days++;
 		}
@@ -4984,20 +4417,26 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
-		$emails = $this->get_unsubscribed_emails();
-
-		return isset( $emails[ $email ] );
+		$record = $this->read_durable_option( 'yoohw_an_optout_' . hash( 'sha256', $email ) );
+		if ( is_array( $record ) && $email === ( $record['email'] ?? '' ) ) { return true; }
+		$legacy = $this->normalize_unsubscribed_emails( $this->read_durable_option( self::OPTION_UNSUBSCRIBED_EMAILS ) );
+		return isset( $legacy[ $email ] );
 	}
 
 	private function get_unsubscribed_emails() {
-		$stored = get_option( self::OPTION_UNSUBSCRIBED_EMAILS, [] );
-		$emails = [];
-
-		if ( ! is_array( $stored ) ) {
-			return $emails;
+		$stored = $this->read_durable_option( self::OPTION_UNSUBSCRIBED_EMAILS );
+		$stored = is_array( $stored ) ? $stored : [];
+		foreach ( $this->read_durable_options( 'yoohw_an_optout_' ) as $optout ) {
+			if ( is_array( $optout ) && ! empty( $optout['email'] ) ) {
+				$stored[ $optout['email'] ] = $optout;
+			}
 		}
+		return $this->normalize_unsubscribed_emails( $stored );
+	}
 
-		foreach ( $stored as $key => $value ) {
+	private function normalize_unsubscribed_emails( $stored ) {
+		$emails = [];
+		foreach ( (array) $stored as $key => $value ) {
 			$email = is_string( $key ) && is_email( $key )
 				? strtolower( sanitize_email( $key ) )
 				: '';
@@ -5033,19 +4472,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
-		$emails = $this->get_unsubscribed_emails();
-
-		$emails[ $email ] = [
-			'email'           => $email,
-			'unsubscribed_at' => time(),
-			'campaign_id'     => sanitize_text_field( $campaign_id ),
-		];
-
-		if ( false === get_option( self::OPTION_UNSUBSCRIBED_EMAILS, false ) ) {
-			return add_option( self::OPTION_UNSUBSCRIBED_EMAILS, $emails, '', 'no' );
-		}
-
-		return update_option( self::OPTION_UNSUBSCRIBED_EMAILS, $emails );
+		$key = 'yoohw_an_optout_' . hash( 'sha256', $email );
+		$data = [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
+		$this->write_durable_option( $key, $data, true );
+		$saved = $this->read_durable_option( $key );
+		return is_array( $saved ) && $email === ( $saved['email'] ?? '' );
 	}
 
 	private function get_unsubscribe_token( $email ) {
@@ -5331,160 +4762,74 @@ class YOOHW_AN_Customer_Email_Notify {
 		return array_values( $recipients );
 	}
 
-	public function process_single_email( $args ) {
-		$raw_args       = is_array( $args ) ? $args : [];
-		$raw_campaign_id = isset( $raw_args['campaign_id'] ) ? sanitize_text_field( $raw_args['campaign_id'] ) : '';
-		$raw_to          = isset( $raw_args['to'] ) ? sanitize_email( $raw_args['to'] ) : '';
-		$args            = $this->hydrate_email_action_args( $raw_args );
-		$action_id       = $this->get_current_action_id();
-
+	public function process_single_email( $raw_args ) {
+		$raw_args = is_array( $raw_args ) ? $raw_args : [];
+		$campaign_id = sanitize_text_field( $raw_args['campaign_id'] ?? '' );
+		$delivery_id = ! empty( $raw_args['delivery_id'] ) ? sanitize_text_field( $raw_args['delivery_id'] ) : $campaign_id;
+		$to = strtolower( sanitize_email( $raw_args['to'] ?? '' ) );
+		$action_id = $this->get_current_action_id();
+		if ( ! $this->ensure_delivery_row( $campaign_id, $delivery_id, $to ) ) {
+			throw new RuntimeException( 'Recipient storage unavailable; no mail was handed off.' );
+		}
+		$claim = $this->claim_recipient_delivery( $campaign_id, $delivery_id, $to, $action_id );
+		if ( false === $claim ) {
+			return; // A duplicate job is not another recipient outcome.
+		}
+		$args = $this->hydrate_email_action_args( $raw_args );
 		if ( is_wp_error( $args ) ) {
-			$this->log_campaign_event(
-				$raw_campaign_id,
-				$raw_to,
-				'failed',
-				$args->get_error_message(),
-				$action_id
-			);
+			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'failed', $args->get_error_message(), 'configuration' );
 			return;
 		}
-
-		$to             = isset( $args['to'] ) ? sanitize_email( $args['to'] ) : '';
-		$name           = isset( $args['name'] ) ? sanitize_text_field( $args['name'] ) : '';
-		$subject        = isset( $args['subject'] ) ? sanitize_text_field( $args['subject'] ) : '';
-		$heading        = isset( $args['heading'] ) ? sanitize_text_field( $args['heading'] ) : '';
-		$message        = isset( $args['message'] ) ? wp_kses_post( $args['message'] ) : '';
-		$products_label = isset( $args['products_label'] ) ? sanitize_text_field( $args['products_label'] ) : '';
-		$campaign_id    = isset( $args['campaign_id'] ) ? sanitize_text_field( $args['campaign_id'] ) : '';
-		$delivery_id    = isset( $args['delivery_id'] ) ? sanitize_text_field( $args['delivery_id'] ) : $campaign_id;
-		$from_email     = isset( $args['from_email'] ) ? sanitize_email( $args['from_email'] ) : $this->get_sender_email();
-		$from_name      = isset( $args['from_name'] ) ? sanitize_text_field( $args['from_name'] ) : $this->get_sender_name();
-		$reply_to_email = isset( $args['reply_to_email'] ) ? sanitize_email( $args['reply_to_email'] ) : $this->get_reply_to_email();
-
-		if ( empty( $to ) || ! is_email( $to ) || empty( $subject ) || empty( $heading ) || empty( $message ) ) {
-			$this->log_campaign_event(
-				$campaign_id,
-				$to,
-				'skipped',
-				__( 'Missing required email fields or invalid recipient.', 'yoohw-advanced-notifications' ),
-				$action_id
-			);
+		$history = $this->get_campaign_history();
+		if ( empty( $history[ $campaign_id ] ) ) {
+			// Inline jobs from before shared payloads were introduced remain observable.
+			$this->record_campaign_snapshot( array_merge( $args, [ 'delivery_id' => $delivery_id ] ), 'processing' );
+		}
+		if ( empty( $args['subject'] ) || empty( $args['heading'] ) || empty( $args['message'] ) ) {
+			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'failed', __( 'Missing required email content. Repair campaign data before retrying.', 'yoohw-advanced-notifications' ), 'configuration' );
 			return;
 		}
-
-		if ( $this->is_email_unsubscribed( $to ) ) {
-			$this->log_campaign_event(
-				$campaign_id,
-				$to,
-				'skipped_unsubscribed',
-				__( 'Recipient unsubscribed before send.', 'yoohw-advanced-notifications' ),
-				$action_id
+		try {
+			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $args['name'] ?? $to, $args['products_label'] ?? '' ], $args['message'] );
+			$message = $this->append_unsubscribe_footer( $message, $to, $campaign_id );
+			// Read the durable opt-out immediately before entering the sending path.
+			if ( $this->is_email_unsubscribed( $to ) ) {
+				$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'skipped_unsubscribed', __( 'Recipient unsubscribed before send.', 'yoohw-advanced-notifications' ) );
+				return;
+			}
+			$this->mail_handoff_started = false;
+			$sent = $this->send_woocommerce_email( $to, $args['subject'], $args['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '' );
+			$status = $sent ? 'sent' : ( $this->mail_handoff_started ? 'unknown' : ( $this->is_email_unsubscribed( $to ) ? 'skipped_unsubscribed' : 'failed' ) );
+			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, $status,
+				$sent ? __( 'Mail system accepted the request; inbox delivery is not verified.', 'yoohw-advanced-notifications' ) : ( $this->last_mail_error ?: __( 'Mail transport returned no confirmation. Check the mail provider before sending again.', 'yoohw-advanced-notifications' ) ),
+				$sent ? '' : ( $this->mail_handoff_started ? 'transport' : 'configuration' )
 			);
-			return;
+		} catch ( Throwable $error ) {
+			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'unknown', $error->getMessage(), 'transport' );
 		}
-
-		$delivery_claim = $this->claim_recipient_delivery( $campaign_id, $delivery_id, $to, $action_id );
-
-		if ( false === $delivery_claim ) {
-			$this->log_campaign_event(
-				$campaign_id,
-				$to,
-				'skipped_duplicate',
-				__( 'Recipient delivery was already claimed for this campaign.', 'yoohw-advanced-notifications' ),
-				$action_id
-			);
-			return;
-		}
-
-		$final_message = str_replace(
-			[
-				'{customer_name}',
-				'{product_name}',
-			],
-			[
-				$name ?: $to,
-				$products_label,
-			],
-			$message
-		);
-		$final_message = $this->append_unsubscribe_footer( $final_message, $to, $campaign_id );
-
-		$sent = $this->send_woocommerce_email(
-			$to,
-			$subject,
-			$heading,
-			$final_message,
-			$from_email,
-			$from_name,
-			$reply_to_email
-		);
-
-		if ( $sent ) {
-			$this->complete_recipient_delivery( $campaign_id, $delivery_id, $to, $delivery_claim, $action_id );
-		} else {
-			$this->release_recipient_delivery( $campaign_id, $delivery_id, $to, $delivery_claim );
-		}
-
-		$this->log_campaign_event(
-			$campaign_id,
-			$to,
-			$sent ? 'sent' : 'failed',
-			$sent ? '' : $this->last_mail_error,
-			$action_id
-		);
 	}
 
-	/**
-	 * Atomically reserve one recipient in one campaign before handing mail to wp_mail().
-	 *
-	 * WordPress options have a unique key at the database layer, so add_option() is
-	 * an atomic compare-and-set even when multiple Action Scheduler workers race.
-	 * The claim is intentionally retained after a successful handoff: retrying an
-	 * action must favor at-most-once delivery over sending the same campaign twice.
-	 *
-	 * @return string|false Claim token on success, false when already claimed.
-	 */
+	/** Compare-and-set in the recipient table; never use add_option() as a lock. */
 	private function claim_recipient_delivery( $campaign_id, $delivery_id, $email, $action_id = 0 ) {
-		$option_name = $this->get_recipient_delivery_option_name( $campaign_id, $delivery_id, $email );
-
-		if ( empty( $option_name ) ) {
+		global $wpdb;
+		$key = $this->get_recipient_delivery_option_name( $campaign_id, $delivery_id, $email );
+		$legacy = $this->read_durable_option( $key );
+		$table = $this->get_recipient_tracking_table_name();
+		$hash = hash( 'sha256', strtolower( $email ) );
+		if ( is_array( $legacy ) || ( $delivery_id === $campaign_id && $this->was_recipient_already_sent( $campaign_id, $email ) ) ) {
+			$status = ( ! is_array( $legacy ) || 'sent' === ( $legacy['state'] ?? '' ) ) ? 'sent' : 'unknown';
+			$wpdb->query( $wpdb->prepare(
+				"UPDATE %i SET status = %s, last_error = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','skipped_duplicate')",
+				$table, $status, __( 'Preserved a pre-upgrade delivery claim. Check the mail provider for unknown outcomes.', 'yoohw-advanced-notifications' ), $campaign_id, $delivery_id, $hash
+			) );
 			return false;
 		}
-
-		// Actions created before delivery_id existed fall back to campaign_id.
-		// Only those legacy actions need the more expensive historical-log lookup.
-		if ( $delivery_id === $campaign_id && $this->was_recipient_already_sent( $campaign_id, $email ) ) {
-			add_option(
-				$option_name,
-				[
-					'state'       => 'sent',
-					'campaign_id' => sanitize_text_field( $campaign_id ),
-					'delivery_id' => sanitize_text_field( $delivery_id ),
-					'email_hash'  => hash( 'sha256', strtolower( sanitize_email( $email ) ) ),
-					'action_id'   => absint( $action_id ),
-					'claimed_at'  => time(),
-					'completed_at' => time(),
-					'token'       => 'migrated-from-campaign-log',
-				],
-				'',
-				false
-			);
-
-			return false;
-		}
-
-		$claim_token = wp_generate_uuid4();
-		$claim       = [
-			'state'      => 'sending',
-			'campaign_id' => sanitize_text_field( $campaign_id ),
-			'delivery_id' => sanitize_text_field( $delivery_id ),
-			'email_hash'  => hash( 'sha256', strtolower( sanitize_email( $email ) ) ),
-			'action_id'   => absint( $action_id ),
-			'claimed_at'  => time(),
-			'token'       => $claim_token,
-		];
-
-		return add_option( $option_name, $claim, '', false ) ? $claim_token : false;
+		$token = wp_generate_uuid4();
+		$result = $wpdb->query( $wpdb->prepare(
+			"UPDATE %i SET status = 'processing', claim_token = %s, action_id = %d, attempts = GREATEST(attempts,1), updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled') AND claim_token = ''",
+			$table, $token, $action_id, current_time( 'mysql', true ), $campaign_id, $delivery_id, $hash
+		) );
+		return 1 === $result ? $token : false;
 	}
 
 	private function was_recipient_already_sent( $campaign_id, $email ) {
@@ -5507,39 +4852,6 @@ class YOOHW_AN_Customer_Email_Notify {
 		return false;
 	}
 
-	private function complete_recipient_delivery( $campaign_id, $delivery_id, $email, $claim_token, $action_id = 0 ) {
-		$option_name = $this->get_recipient_delivery_option_name( $campaign_id, $delivery_id, $email );
-		$claim       = ! empty( $option_name ) ? get_option( $option_name, [] ) : [];
-
-		if (
-			! is_array( $claim ) ||
-			empty( $claim['token'] ) ||
-			! hash_equals( (string) $claim['token'], (string) $claim_token )
-		) {
-			return false;
-		}
-
-		$claim['state']        = 'sent';
-		$claim['action_id']    = absint( $action_id );
-		$claim['completed_at'] = time();
-
-		return update_option( $option_name, $claim, false );
-	}
-
-	private function release_recipient_delivery( $campaign_id, $delivery_id, $email, $claim_token ) {
-		$option_name = $this->get_recipient_delivery_option_name( $campaign_id, $delivery_id, $email );
-		$claim       = ! empty( $option_name ) ? get_option( $option_name, [] ) : [];
-
-		if (
-			! is_array( $claim ) ||
-			empty( $claim['token'] ) ||
-			! hash_equals( (string) $claim['token'], (string) $claim_token )
-		) {
-			return false;
-		}
-
-		return delete_option( $option_name );
-	}
 
 	private function get_recipient_delivery_option_name( $campaign_id, $delivery_id, $email ) {
 		$campaign_id = sanitize_text_field( $campaign_id );
@@ -5832,6 +5144,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
+		if ( $this->is_email_unsubscribed( $to ) ) {
+			$this->last_mail_error = __( 'Recipient unsubscribed before mail handoff.', 'yoohw-advanced-notifications' );
+			return false;
+		}
+
 		$this->current_from_email = is_email( $from_email ) ? sanitize_email( $from_email ) : $this->get_sender_email();
 		$this->current_from_name  = ! empty( $from_name ) ? sanitize_text_field( $from_name ) : $this->get_sender_name();
 		$headers                  = $this->build_email_headers( $reply_to_email );
@@ -5841,14 +5158,17 @@ class YOOHW_AN_Customer_Email_Notify {
 		add_filter( 'wp_mail_from_name', [ $this, 'override_from_name' ] );
 		add_action( 'wp_mail_failed', [ $this, 'capture_mail_error' ], 10, 1 );
 
-		$result = wp_mail( $to, $subject, $email_body, $headers );
+		$this->mail_handoff_started = true;
+		try {
+			$result = wp_mail( $to, $subject, $email_body, $headers );
+		} finally {
+			remove_action( 'wp_mail_failed', [ $this, 'capture_mail_error' ], 10 );
+			remove_filter( 'wp_mail_from', [ $this, 'override_from_email' ] );
+			remove_filter( 'wp_mail_from_name', [ $this, 'override_from_name' ] );
 
-		remove_action( 'wp_mail_failed', [ $this, 'capture_mail_error' ], 10 );
-		remove_filter( 'wp_mail_from', [ $this, 'override_from_email' ] );
-		remove_filter( 'wp_mail_from_name', [ $this, 'override_from_name' ] );
-
-		$this->current_from_email = '';
-		$this->current_from_name  = '';
+			$this->current_from_email = '';
+			$this->current_from_name  = '';
+		}
 
 		return $result;
 	}
@@ -5886,6 +5206,9 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function get_current_action_id() {
+		if ( $this->current_action_id ) {
+			return $this->current_action_id;
+		}
 		if ( function_exists( 'as_get_current_action_id' ) ) {
 			return absint( as_get_current_action_id() );
 		}
