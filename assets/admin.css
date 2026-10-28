@@ -501,3 +501,7 @@
 		margin-left: 0;
 	}
 }
+
+.an-inline { display: inline-block; margin: 4px 4px 4px 0; }
+.an-personal-preview { display: block; width: 100%; max-width: 920px; height: 640px; border: 1px solid #dcdcde; background: white; }
+.an-order-filters select { min-width: 200px; }

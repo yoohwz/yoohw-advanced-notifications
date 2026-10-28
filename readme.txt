@@ -21,11 +21,15 @@ Open Marketing > Email campaigns to create a campaign, view Campaigns & Logs, or
 * Exclusions: order statuses, product purchasers, manually entered email addresses, and previous unsubscribes.
 * WooCommerce HTML email styling, rich-text editor and live preview.
 * Test email, preview and confirmation before queuing a campaign.
-* Immediate delivery through Action Scheduler, or scheduled delivery using recipient location with UTC fallback.
+* Immediate delivery, one store-timezone instant, or the same local time per recipient using an explicitly labelled location estimate with UTC fallback. New schedules reject past and DST-ambiguous/nonexistent times.
 * Batched dispatch, shared campaign content, duplicate protection, recipient status and campaign logs.
 * Recover interrupted preparation and missing jobs; bounded retries for queue failures and known pre-transport failures.
 * Configurable From, Reply-To and automated-reply suppression headers.
+* Pause, Resume and Cancel individual campaigns; site-wide minute/day admission limits across campaigns.
+* Durable drafts, campaign duplication, three editable templates and personalized desktop/mobile previews.
+* Source-aware order/date/category/country/subscription/handoff filters, saved audiences and address inspection.
 * Durable opt-outs and signed unsubscribe links checked again before delivery.
+* Subscription evidence and previewed suppression imports, WordPress personal data export/erasure and configurable terminal retention.
 * Handed-to-mail-system, failed, skipped and unknown outcomes are shown separately; inbox delivery is not verified.
 
 WooCommerce Subscriptions integration and Audience sync are not included.
@@ -33,7 +37,7 @@ Default sender details come from WooCommerce email settings. Configure an approp
 
 This plugin uses its own yoohw_an_* options, hooks and recipient table. It does not import campaign history, sender settings, unsubscribes or queued jobs from YoOhw Extra Code. Review existing opt-outs before starting campaigns on a migrated site.
 
-Deactivation cancels pending delivery/dispatch jobs, cancels retryable queue/schedule failures and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs. See docs/reliability-review.md for upgrade and recovery behavior.
+Deactivation cancels pending delivery/dispatch jobs, cancels retryable queue/schedule failures and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs. See docs/reliability-review.md for upgrade and recovery behavior, and docs/operator-features.md for controls, audience semantics, scheduling and privacy decisions.
 
 == Installation ==
 
@@ -83,6 +87,12 @@ The wrapper selects a disposable WordPress installation with WooCommerce and thi
 See docs/reliability-review.md for the implementation, compatibility decisions and limits.
 
 == Changelog ==
+
+= Unreleased =
+* Add individual campaign controls and shared sending admission limits.
+* Add durable drafts, duplication, content templates and personalized previews.
+* Add source-aware saved audiences and explicit timezone scheduling.
+* Add subscription/suppression administration, privacy callbacks and terminal retention.
 
 = 0.2.2 =
 * Align the translation domain with the WordPress.org slug yoohw-advanced-notifications.

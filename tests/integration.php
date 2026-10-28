@@ -68,7 +68,7 @@ try {
 	$role_recipients = $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users', 'user_roles' => [ 'shop_manager', 'subscriber' ] ] );
 	$assert( 'roles_match_any_and_deduplicate_users', 2 === count( $role_recipients ) );
 	$assert( 'invalid_role_does_not_expand_audience', [] === $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users', 'user_roles' => [ 'missing-role' ] ] ) );
-	$assert( 'empty_roles_preserve_all_users', 3 === count( $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users' ] ) ) );
+	$assert( 'empty_roles_preserve_all_users', count( get_users( [ 'fields' => 'ID' ] ) ) === count( $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users' ] ) ) );
 	$assert( 'registered_users_are_selectable', in_array( $tag . '@example.com', array_column( $call( 'get_registered_user_recipients' ), 'email' ), true ) );
 	$product = new WC_Product_Simple();
 	$product->set_name( 'Notification test product' );
@@ -255,7 +255,7 @@ try {
 	ob_start();
 	$notify->render_page();
 	$html = ob_get_clean();
-	$assert( 'campaign_form_omits_removed_features', false !== strpos( $html, 'Campaigns &amp; Logs' ) && false === stripos( $html, 'subscription' ) && false === stripos( $html, 'audience-sync' ) );
+	$assert( 'campaign_form_omits_removed_features', false !== strpos( $html, 'Campaigns &amp; Logs' ) && false !== strpos( $html, 'Subscription status' ) && false === stripos( $html, 'audience-sync' ) );
 	foreach ( [ 'campaigns', 'settings' ] as $tab ) {
 		$_GET['tab'] = $tab;
 		ob_start();

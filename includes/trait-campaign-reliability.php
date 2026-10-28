@@ -37,6 +37,7 @@ trait YOOHW_AN_Campaign_Reliability {
 				if ( empty( $args['campaign_id'] ) || empty( $args['to'] ) ) {
 					continue;
 				}
+				if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $args['to'] ) ) ) ) { continue; }
 				$id = $args['campaign_id'];
 				$delivery = ! empty( $args['delivery_id'] ) ? $args['delivery_id'] : $id;
 				if ( ! $this->acquire_campaign_lock( $id ) ) {
@@ -170,7 +171,7 @@ trait YOOHW_AN_Campaign_Reliability {
 			return false; // Never reconstruct a historical audience from today's customers.
 		}
 		$history = $this->get_campaign_history();
-		if ( ! $this->recovery_enabled || ! empty( $history[ $id ]['cancelled'] ) ) {
+		if ( ! $this->recovery_enabled || $this->campaign_blocked( $id ) || ! empty( $history[ $id ]['cancelled'] ) ) {
 			return false;
 		}
 		if ( ! empty( $history[ $id ]['preparation_complete'] ) ) {
@@ -194,6 +195,7 @@ trait YOOHW_AN_Campaign_Reliability {
 	private function recover_campaign_recipients( $campaign, $manual = false ) {
 		global $wpdb;
 		$id = $campaign['campaign_id'];
+		if ( $this->campaign_blocked( $id ) ) { return; }
 		$delivery = ! empty( $campaign['delivery_id'] ) ? $campaign['delivery_id'] : $id;
 		$table = $this->get_recipient_tracking_table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Recovery must inspect current recipient state before comparing it with the live Action Scheduler job state.
@@ -225,7 +227,7 @@ trait YOOHW_AN_Campaign_Reliability {
 				continue;
 			}
 			$queue_failure = in_array( $row['status'], [ 'queue_failed', 'schedule_failed' ], true );
-			$missing_job = in_array( $row['status'], [ 'queued', 'scheduled' ], true ) && $age >= 5 * MINUTE_IN_SECONDS;
+			$missing_job = in_array( $row['status'], [ 'queued', 'scheduled' ], true ) && ( $manual || $age >= 5 * MINUTE_IN_SECONDS );
 			$known_failure = $manual && 'failed' === $row['status'] && 'configuration' === $row['error_kind'];
 			if ( ( $queue_failure || $missing_job || $known_failure ) && (int) $row['attempts'] < 3 && ( $manual || $age >= 5 * MINUTE_IN_SECONDS ) ) {
 				if ( $this->is_email_unsubscribed( $row['email'] ) ) {
@@ -257,7 +259,7 @@ trait YOOHW_AN_Campaign_Reliability {
 			if ( empty( $history[ $id ] ) ) {
 				return 0;
 			}
-			if ( ! empty( $history[ $id ]['cancelled'] ) ) { return 0; }
+			if ( $this->campaign_blocked( $id ) || ! empty( $history[ $id ]['cancelled'] ) ) { return 0; }
 			$history[ $id ]['dispatch_error'] = '';
 			$this->save_campaign_record( $history[ $id ] );
 			$this->recover_campaign_recipients( $history[ $id ], true );
@@ -270,7 +272,7 @@ trait YOOHW_AN_Campaign_Reliability {
 
 	private function ensure_delivery_row( $campaign_id, $delivery_id, $email ) {
 		global $wpdb;
-		if ( empty( $campaign_id ) || empty( $delivery_id ) || ! is_email( $email ) || ! $this->recipient_tracking_table_exists() ) {
+		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $email ) ) ) || empty( $campaign_id ) || empty( $delivery_id ) || ! is_email( $email ) || ! $this->recipient_tracking_table_exists() ) {
 			return false;
 		}
 		$now = current_time( 'mysql', true );

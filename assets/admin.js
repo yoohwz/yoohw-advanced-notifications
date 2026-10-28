@@ -22,10 +22,12 @@
 		$('#yoohw-advanced-notifications-roles-row').toggle(isRegisteredSource).find(':input').prop('disabled', !isRegisteredSource);
 		$('#yoohw-advanced-notifications-manual-row').toggle(isManualSource).find(':input').prop('disabled', !isManualSource);
 		$('#yoohw-advanced-notifications-customers-row').toggle(source === yoohwAN.customersSource);
+		$('.an-order-filters').toggle(isProductSource || source === yoohwAN.customersSource).find(':input').prop('disabled', !(isProductSource || source === yoohwAN.customersSource));
+		$('.an-country-filter').toggle(!isManualSource).find(':input').prop('disabled', isManualSource);
 	}
 
 	function toggleScheduleFields() {
-		var isScheduled = $('input[name="schedule_mode"]:checked').val() === 'scheduled';
+		var isScheduled = $('input[name="schedule_mode"]:checked').val() !== 'now';
 		var $row = $('#yoohw-advanced-notifications-schedule-row');
 
 		$row.toggle(isScheduled);
@@ -182,6 +184,18 @@
 			}
 		});
 	});
+	$(window).on('pageshow', function() { toggleRecipientFields(); toggleScheduleFields(); toggleTestEmailFields(); });
+	$(document).on('change', '.an-preview-width', function() { $('.an-personal-preview').css('width', this.value); });
+	$(document).on('change', '#an-template', function() {
+		var option = this.options[this.selectedIndex];
+		if (!this.value) { return; }
+		$('#email_subject, #email_heading').val(option.dataset.subject);
+		$('#email_message').val(option.dataset.body);
+		var editor = window.tinymce ? window.tinymce.get('email_message') : null;
+		if (editor) { editor.setContent(option.dataset.body); }
+		updateEmailPreview();
+	});
+	$(document).on('submit', 'form', function() { if (window.tinymce) { window.tinymce.triggerSave(); } });
 	$(document).on('change', '#recipient_source', toggleRecipientFields);
 	$(document).on('change', 'input[name="schedule_mode"]', toggleScheduleFields);
 	$(document).on('change', '#test_mode', toggleTestEmailFields);

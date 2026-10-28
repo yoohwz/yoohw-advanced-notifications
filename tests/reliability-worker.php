@@ -27,6 +27,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 		if ( 'crash_before' === $fault ) { $signal( 'transport-before' ); $wait( 'never' ); }
 		file_put_contents( $directory . '/transport.jsonl', wp_json_encode( [ 'pid' => getmypid(), 'to' => $attributes['to'], 'subject' => $attributes['subject'] ] ) . "\n", FILE_APPEND | LOCK_EX );
 		if ( 'crash_after' === $fault ) { $signal( 'transport-after' ); $wait( 'never' ); }
+		if ( 'hold_transport' === $fault ) { $signal( 'transport-held' ); $wait( 'release-transport' ); }
 		if ( 'transport_false' === $fault ) { return false; }
 		if ( 'transport_exception' === $fault ) { throw new RuntimeException( 'Synthetic transport disconnect after submission.' ); }
 		usleep( 20000 );
@@ -73,6 +74,26 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 	}
 	$result = null;
 	switch ( $input['mode'] ) {
+		case 'control':
+			$result = $call( 'control_campaign', $id, $input['operation'] );
+			if ( is_wp_error( $result ) ) { $result = [ 'error' => $result->get_error_code() ]; }
+			break;
+		case 'limits':
+			$call( 'write_durable_option', 'yoohw_an_limits', $input['limits'] ?? [] );
+			if ( ! empty( $input['reset_rate'] ) ) { $call( 'write_durable_option', 'yoohw_an_rate', [] ); }
+			break;
+		case 'clear_wait':
+			$control = $call( 'campaign_control', $id ); unset( $control['rate_resume_at'] );
+			$call( 'write_durable_option', $call( 'control_key', $id ), $control );
+			break;
+		case 'erase': $result = $notify->erase_personal_data( $input['email'] ); break;
+		case 'direct':
+			$campaign = $call( 'get_campaign_history' )[ $id ];
+			$payload = $call( 'get_campaign_reschedule_payload', $campaign );
+			$reference = $call( 'store_campaign_email_payload', $payload );
+			$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT email,recipient_name AS name FROM %i WHERE campaign_id = %s AND email <> %s ORDER BY id', $table, $id, '' ), ARRAY_A );
+			foreach ( $rows as $recipient ) { $notify->process_single_email( $call( 'build_email_action_args', $payload, $recipient, $reference ) ); }
+			break;
 		case 'reset':
 			$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM %i WHERE option_name LIKE %s", $wpdb->options, $wpdb->esc_like( 'yoohw_an_' ) . '%' ) );
 			foreach ( $names as $name ) { delete_option( $name ); }
