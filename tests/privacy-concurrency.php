@@ -14,7 +14,19 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 	$wait = static function ( $name ) use ( $dir ) { $end = microtime( true ) + 25; while ( ! file_exists( $dir . '/' . $name ) ) { if ( microtime( true ) > $end ) { throw new RuntimeException( 'Barrier timed out.' ); } usleep( 10000 ); } };
 	add_filter( 'pre_wp_mail', static function ( $pre, $atts ) use ( $dir ) { file_put_contents( $dir . '/transport.jsonl', wp_json_encode( [ 'subject' => $atts['subject'] ] ) . "\n", FILE_APPEND | LOCK_EX ); return true; }, PHP_INT_MAX, 2 );
 	$out = null;
-	if ( 'legacy_seed' === $input['mode'] ) {
+	if ( 'manifest_seed' === $input['mode'] ) {
+		$f( 'write_durable_option', $f( 'campaign_manifest_key', $id ), [ 'payload' => $p, 'recipients' => [ $recipient ], 'confirmed_at' => time() ] );
+		$f( 'record_campaign_snapshot', $p, 'needs_attention', [ 'recipient_count' => 1 ] );
+		foreach ( [ 'preview' => 'previewed', 'test' => 'test_sent', 'retained' => 'completed' ] as $suffix => $status ) {
+			$copy = array_merge( $p, [ 'campaign_id' => $id . '-' . $suffix, 'delivery_id' => $id . '-' . $suffix, 'status' => $status ] );
+			if ( 'retained' === $suffix ) { $copy['retained'] = true; }
+			$f( 'save_campaign_record', $copy );
+		}
+		$out = true;
+	} elseif ( 'manifest_inspect' === $input['mode'] ) {
+		$history = $f( 'get_campaign_history' );
+		$out = [ 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'status' => $history[ $id ]['status'], 'rows' => (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE campaign_id = %s', $table, $id ) ) ];
+	} elseif ( 'legacy_seed' === $input['mode'] ) {
 		$args = array_merge( $p, [ 'to' => $email, 'name' => 'Legacy fixture' ] );
 		$action_id = as_schedule_single_action( time() - 300, YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, [ $args ], YOOHW_AN_Customer_Email_Notify::ACTION_GROUP );
 		delete_option( 'yoohw_an_reliability_import' );
@@ -35,7 +47,8 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$out = [ 'action_status' => ActionScheduler::store()->get_status( $input['action_id'] ), 'marker' => $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'row' => $row, 'history' => isset( $f( 'get_campaign_history' )[ $id ] ), 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'args' => $action->get_args() ];
 	} elseif ( 'legacy_deactivate' === $input['mode'] ) {
 		$key = $f( 'control_key', $id ); $marker_key = 'yoohw_an_privacy_wait_' . $input['action_id']; $armed = false;
-		$fault = static function ( $sql ) use ( $key, $marker_key, &$armed, $input ) {
+		$fault = static function ( $sql ) use ( $key, $marker_key, $id, &$armed, $input ) {
+			if ( 'eligibility-read' === ( $input['fault'] ?? '' ) && str_contains( $sql, 'COUNT(*) AS total' ) && str_contains( $sql, "'" . $id . "'" ) ) { return 'SELECT status, COUNT(*) AS total FROM missing_deactivation_eligibility_fixture'; }
 			if ( 'marker-read' === ( $input['fault'] ?? '' ) && str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, $marker_key ) ) { return 'SELECT option_value FROM missing_deactivation_gate_fixture'; }
 			if ( ! str_contains( $sql, $key ) ) { return $sql; }
 			if ( str_starts_with( $sql, 'INSERT INTO' ) ) { $armed = true; if ( 'write' === ( $input['fault'] ?? '' ) ) { return 'INSERT INTO missing_deactivation_gate_fixture VALUES (1)'; } }
@@ -47,10 +60,16 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 			$pending = as_schedule_single_action( time() + 600, YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, [ array_merge( $p, [ 'campaign_id' => $id . '-extra', 'to' => $email ] ) ], YOOHW_AN_Customer_Email_Notify::ACTION_GROUP );
 			$wpdb->suppress_errors(); add_filter( 'query', $fault );
 		}
+		$snapshots = [];
+		foreach ( [ 'preview', 'test', 'retained' ] as $suffix ) { $snapshots[ $suffix ] = $f( 'read_durable_option', $f( 'campaign_record_key', $id . '-' . $suffix ) ); }
+		$final = $wpdb->get_results( "SELECT email_hash,status,claim_token FROM {$table} WHERE status IN ('sent','unknown') ORDER BY id", ARRAY_A );
 		$failure = false;
 		try { $n->deactivate(); } catch ( RuntimeException $error ) { $failure = str_contains( $error->getMessage(), 'Deactivation did not complete' ); }
 		remove_filter( 'query', $fault );
-		$out = [ 'failed' => $failure, 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'marker' => (bool) $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'pending_preserved' => ! $pending || 'pending' === ActionScheduler::store()->get_status( $pending ) ];
+		$untouched = true;
+		foreach ( $snapshots as $suffix => $before ) { $untouched = $untouched && $before === $f( 'read_durable_option', $f( 'campaign_record_key', $id . '-' . $suffix ) ) && ! $f( 'campaign_control', $id . '-' . $suffix ); }
+		$preserved = $final === $wpdb->get_results( "SELECT email_hash,status,claim_token FROM {$table} WHERE status IN ('sent','unknown') ORDER BY id", ARRAY_A );
+		$out = [ 'unconfirmed_and_retained_untouched' => $untouched, 'final_outcomes_preserved' => $preserved, 'failed' => $failure, 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'marker' => (bool) $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'pending_preserved' => ! $pending || 'pending' === ActionScheduler::store()->get_status( $pending ) ];
 	} elseif ( 'stale_resume_seed' === $input['mode'] ) {
 		$f( 'confirm_campaign', $p, [ $recipient ] ); $n->dispatch_campaign_batch( $id ); $f( 'control_campaign', $id, 'pause' ); $out = true;
 	} elseif ( 'stale_resume' === $input['mode'] ) {

@@ -217,6 +217,24 @@ try:
         run('legacy_recover', id, action_id=aid)
         state = run('legacy_inspect', id, action_id=aid)
         check('deactivate_' + case + '_reactivation_cannot_reconstruct_or_send', state['cancelled'] and not state['row'] and not state['history'] and not state['marker'])
+    for case in ['normal', 'write', 'eligibility-read']:
+        reset()
+        id = tag + '-manifest-deactivate-' + case
+        run('manifest_seed', id)
+        lock = spawn('lock', id, locks=['__privacy__'])
+        barrier()
+        result = run('legacy_deactivate', id, action_id=0, fault='' if case == 'normal' else case)
+        if case != 'normal':
+            check('manifest_deactivation_' + case + '_failure_truthful_before_unschedule', result['failed'] and result['pending_preserved'])
+            result = run('legacy_deactivate', id, action_id=0)
+        check('manifest_only_' + case + '_cancellation_does_not_need_privacy_lock', not result['failed'] and result['cancelled'])
+        check('manifest_only_' + case + '_preserves_preview_test_retained_and_final_outcomes', result['unconfirmed_and_retained_untouched'] and result['final_outcomes_preserved'])
+        release()
+        collect(lock)
+        run('legacy_recover', id, action_id=0)
+        run('legacy_recover', id, action_id=0)
+        state = run('manifest_inspect', id)
+        check('manifest_only_' + case + '_reactivation_cannot_prepare_or_send', state['cancelled'] and state['status'] == 'cancelled' and state['rows'] == 0)
     id = tag + '-stale-resume'
     for name in ['resume-before-admit', 'resume-admit']:
         (out / name).unlink(missing_ok=True)
