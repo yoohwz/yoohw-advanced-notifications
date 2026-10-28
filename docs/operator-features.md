@@ -61,3 +61,15 @@ Kết quả theo revision cuối được ghi trong PR và bàn giao. Kiểm tra
 ### Review correction: known unsent history
 
 The known-unsent history filter excludes recoverable failures until the existing three-attempt limit is exhausted. A terminal configuration failure requires explicit modern configuration provenance; legacy failures without that evidence remain excluded. Pending/in-progress delivery jobs (including unlinked duplicates), legacy claims and handoff evidence exclude the address. A durable campaign cancellation can establish a cancelled recipient as unsent because admission remains blocked even when a stale scheduled action exists.
+
+### UI đã duyệt trong PR #3
+
+Workspace có năm mục: Campaigns, Compose, Library, Subscribers và Settings. Compose chia Audience → Content → Schedule → Review; thanh tên/Save draft luôn nằm trên phần soạn. Review dẫn tới preview người nhận thật trước khi xác nhận. Khi không có JavaScript, các phần vẫn hiện trong cùng form. Library chứa draft và saved audience; Subscribers chứa tìm kiếm cùng preview/apply import; Settings chứa sender, hạn mức và retention.
+
+Màu nhấn, hover, focus, lựa chọn và phần mở rộng kế thừa Admin Color Scheme của người dùng WordPress; không thêm setting màu riêng. Email preview vẫn dùng màu thương hiệu từ WooCommerce như email thực, độc lập với màu giao diện quản trị. Chuyển nguồn không tự xóa điều kiện đã nhập: điều kiện không phù hợp được giữ và preview bị từ chối cho tới khi người dùng sửa hoặc xóa rõ ràng.
+
+### Bản sửa sau review độc lập
+
+Các ghi dữ liệu cá nhân được tuần tự hóa với erasure và kiểm tra lại protective hashes ngay tại điểm lưu, kể cả nguồn bằng chứng và diagnostic text tham chiếu địa chỉ khác. Worker đã handoff vẫn ghi outcome ngay; khi không thể kiểm tra diagnostic an toàn, chỉ bỏ diagnostic text. Public opt-out chờ khóa tối đa hai giây để các yêu cầu đồng thời ngắn đều lưu được; timeout/storage failure vẫn báo lỗi.
+
+Erasure giữa preparation giữ hash, dấu erased và due time tối thiểu trong manifest; cancelled placeholder bảo toàn số người đã xác nhận mà không ghi đè claim/outcome đã có. Legacy AS action chưa có row, bị privacy-busy trước handoff, lưu checkpoint chỉ gồm action ID và hashes. Importer hiện có chỉ phục hồi đúng failure có checkpoint khớp; không replay failed/unknown chung. Xóa checkpoint sau khi row/snapshot/association đã lưu; args đã thay đổi hoặc địa chỉ đã erase không được dựng lại.
