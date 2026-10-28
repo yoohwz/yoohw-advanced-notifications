@@ -1005,9 +1005,9 @@ class YOOHW_AN_Customer_Email_Notify {
 							<div id="yoohw-advanced-notifications-manual-row" class="yoohw-advanced-notifications-field" style="grid-column: 1 / -1;">
 								<label for="manual_emails"><?php esc_html_e( 'Recipient email addresses', 'yoohw-advanced-notifications' ); ?></label>
 								<textarea name="manual_emails" id="manual_emails" rows="5" class="large-text" placeholder="one@example.com&#10;two@example.com"><?php echo esc_textarea( $selected_manual_emails ); ?></textarea>
-								<p><?php esc_html_e( 'Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Scheduled delivery uses UTC for this list.', 'yoohw-advanced-notifications' ); ?></p>
+								<p><?php esc_html_e( 'Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Recipient-local scheduling uses UTC for this list; store-time scheduling uses the store timezone.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
-							<p id="yoohw-advanced-notifications-customers-row" class="description" style="grid-column: 1 / -1;"><?php esc_html_e( 'Includes billing email addresses from processing and completed orders, including guest purchases. Each email address is included once.', 'yoohw-advanced-notifications' ); ?></p>
+							<p id="yoohw-advanced-notifications-customers-row" class="description" style="grid-column: 1 / -1;"><?php esc_html_e( 'Includes billing email addresses from matching orders, including guests (processing/completed by default). Each email address is included once.', 'yoohw-advanced-notifications' ); ?></p>
 
 							<div id="yoohw-advanced-notifications-products-row" class="yoohw-advanced-notifications-field">
 								<label for="product_ids"><?php esc_html_e( 'Products', 'yoohw-advanced-notifications' ); ?></label>

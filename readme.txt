@@ -15,9 +15,9 @@ Compose, preview, schedule and track WooCommerce customer email campaigns.
 
 Open Marketing > Email campaigns to create a campaign, view Campaigns & Logs, or configure sender settings.
 
-* Recipients: selected product purchasers, all WooCommerce customers with processing/completed orders (including guests), registered users with an optional role filter, or a pasted email list.
+* Recipients: selected product purchasers, WooCommerce customers with matching orders (processing/completed by default, including guests), registered users with an optional role filter, or a pasted email list.
 * Role selection matches any selected role. Leaving it empty includes all registered users.
-* Manual email lists reject invalid addresses and deduplicate emails without regard to letter case. Names fall back to email addresses; scheduled delivery uses UTC.
+* Manual email lists reject invalid addresses and deduplicate emails without regard to letter case. Names fall back to email addresses; recipient-local scheduling uses UTC, while store-time scheduling uses the store timezone.
 * Exclusions: order statuses, product purchasers, manually entered email addresses, and previous unsubscribes.
 * WooCommerce HTML email styling, rich-text editor and live preview.
 * Test email, preview and confirmation before queuing a campaign.

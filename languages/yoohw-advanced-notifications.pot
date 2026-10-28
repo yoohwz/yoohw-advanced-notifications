@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T06:46:13+00:00\n"
+"POT-Creation-Date: 2026-10-28T06:49:47+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
@@ -213,11 +213,11 @@ msgid "Recipient email addresses"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1008
-msgid "Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Scheduled delivery uses UTC for this list."
+msgid "Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Recipient-local scheduling uses UTC for this list; store-time scheduling uses the store timezone."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1010
-msgid "Includes billing email addresses from processing and completed orders, including guest purchases. Each email address is included once."
+msgid "Includes billing email addresses from matching orders, including guests (processing/completed by default). Each email address is included once."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1013
