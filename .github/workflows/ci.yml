@@ -1,0 +1,141 @@
+name: Advanced Notifications CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    name: Select CI intensity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.plan.outputs.full }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - id: plan
+        run: python3 bin/ci-plan.py
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft || false }}
+
+  repository-contracts:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Metadata, CI plan, and fail-closed gate contracts
+        run: python3 tests/ci-contract-tests.py
+      - name: Diff whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == workflow_dispatch || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            git show --format= --check HEAD
+          else
+            git diff --check "$BASE_SHA...HEAD"
+          fi
+
+  quality:
+    name: PHP syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - run: find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+
+  javascript:
+    name: JavaScript syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '24'
+      - run: node --check assets/admin.js
+
+  regression:
+    name: Regression ${{ matrix.wordpress }} / PHP ${{ matrix.php }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/regression.yml
+    with:
+      wordpress: ${{ matrix.wordpress }}
+      php: ${{ matrix.php }}
+
+  plugin-check:
+    name: WordPress Plugin Check
+    needs: plan
+    if: ${{ needs.plan.outputs.full == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Stage distributable payload using .distignore
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/plugin-check/yoohw-advanced-notifications"
+          rsync -a --exclude-from=.distignore ./ "$RUNNER_TEMP/plugin-check/yoohw-advanced-notifications/"
+          test -f "$RUNNER_TEMP/plugin-check/yoohw-advanced-notifications/yoohw-advanced-notifications.php"
+          for excluded in .git .github AGENTS.md bin tests; do
+            test ! -e "$RUNNER_TEMP/plugin-check/yoohw-advanced-notifications/$excluded"
+          done
+      - uses: wordpress/plugin-check-action@10857da14b6c2246d15402b3e69f777edcf8c12e # v1.1.9
+        with:
+          build-dir: ${{ runner.temp }}/plugin-check/yoohw-advanced-notifications
+          slug: yoohw-advanced-notifications
+          # Published support metadata is not bumped to silence upstream drift.
+          ignore-codes: outdated_tested_upto_header
+          strict: false
+
+  ci-gate:
+    name: ${{ needs.plan.outputs.full == 'true' && 'CI Gate' || 'Iteration Gate' }}
+    if: ${{ always() }}
+    needs: [plan, repository-contracts, quality, javascript, regression, plugin-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - run: bash bin/validate-ci-gate.sh
+        env:
+          FULL: ${{ needs.plan.outputs.full }}
+          PLAN: ${{ needs.plan.result }}
+          CONTRACTS: ${{ needs.repository-contracts.result }}
+          QUALITY: ${{ needs.quality.result }}
+          JAVASCRIPT: ${{ needs.javascript.result }}
+          REGRESSION: ${{ needs.regression.result }}
+          PLUGIN_CHECK: ${{ needs.plugin-check.result }}

@@ -1,0 +1,57 @@
+name: Advanced Notifications regression runner
+
+on:
+  workflow_call:
+    inputs:
+      wordpress:
+        required: true
+        type: string
+      php:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: WordPress ${{ inputs.wordpress }} / PHP ${{ inputs.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ inputs.php }}
+          extensions: mysqli, mbstring
+          ini-values: memory_limit=512M
+          tools: wp-cli:2.12.0
+          coverage: none
+      - name: Check PHP syntax on the selected runtime
+        run: find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
+      - name: Run WP-CLI integration, internationalization, and reliability checks
+        run: bash bin/run-wp-regression.sh
+        env:
+          WP_VERSION: ${{ inputs.wordpress }}
+      - name: Upload regression evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: regression-wp-${{ inputs.wordpress }}-php-${{ inputs.php }}
+          path: ${{ runner.temp }}/advanced-notifications-evidence/
+          if-no-files-found: warn
+          retention-days: 7

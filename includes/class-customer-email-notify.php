@@ -145,14 +145,15 @@ class YOOHW_AN_Customer_Email_Notify {
 			$table = $this->get_recipient_tracking_table_name();
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
 			$wpdb->query( $wpdb->prepare(
-				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled')",
+				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled', 'queue_failed', 'schedule_failed')",
 				$table,
 				__( 'Plugin deactivated before delivery.', 'yoohw-advanced-notifications' ),
 				current_time( 'mysql', true )
 			) );
 			foreach ( $this->get_campaign_history() as $campaign ) {
 				$unfinished_preparation = empty( $campaign['preparation_complete'] ) && is_array( $this->read_durable_option( $this->campaign_manifest_key( $campaign['campaign_id'] ) ) );
-				if ( $unfinished_preparation || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
+				$counts = $this->get_recipient_tracking_counts( $campaign['campaign_id'], ! empty( $campaign['delivery_id'] ) ? $campaign['delivery_id'] : $campaign['campaign_id'] );
+				if ( $unfinished_preparation || ! empty( $counts['cancelled'] ) || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
 					$campaign['status'] = 'cancelled';
 					$campaign['cancelled'] = true;
 					$this->save_campaign_record( $campaign );

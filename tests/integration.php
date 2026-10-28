@@ -28,11 +28,12 @@ $products = $orders = $users = $cleanup_options = $captured_mail = $queued = [];
 $preview_token = '';
 $campaign_id = 'an-test-' . wp_generate_uuid4();
 $mail_filter = static function ( $pre, $attributes ) use ( &$captured_mail ) { $captured_mail[] = $attributes; return true; };
-$queue_filter = static function ( $pre, $hook, $args, $group, $priority, $unique ) use ( &$queued ) {
+// Older Action Scheduler versions do not pass $unique to the pre-scheduling filters.
+$queue_filter = static function ( $pre, $hook, $args, $group, $priority, $unique = false ) use ( &$queued ) {
 	$queued[] = compact( 'hook', 'args', 'group', 'unique' );
 	return 900000 + count( $queued );
 };
-$schedule_filter = static function ( $pre, $timestamp, $hook, $args, $group, $priority, $unique ) use ( &$queued ) {
+$schedule_filter = static function ( $pre, $timestamp, $hook, $args, $group, $priority, $unique = false ) use ( &$queued ) {
 	$queued[] = compact( 'timestamp', 'hook', 'args', 'group', 'unique' );
 	return 900000 + count( $queued );
 };

@@ -84,6 +84,7 @@ trait YOOHW_AN_Campaign_Reliability {
 		$sql = $insert_only
 			? "INSERT IGNORE INTO %i (option_name,option_value,autoload) VALUES (%s,%s,'no')"
 			: "INSERT INTO %i (option_name,option_value,autoload) VALUES (%s,%s,'no') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = 'no'";
+		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.NotPrepared -- $sql selects between two fixed statements above; all identifiers and values use prepared placeholders.
 		$result = $wpdb->query( $wpdb->prepare( $sql, $wpdb->options, $name, maybe_serialize( $value ) ) );
 		wp_cache_delete( $name, 'options' );
 		wp_cache_delete( 'notoptions', 'options' );

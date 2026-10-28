@@ -33,7 +33,7 @@ Default sender details come from WooCommerce email settings. Configure an approp
 
 This plugin uses its own yoohw_an_* options, hooks and recipient table. It does not import campaign history, sender settings, unsubscribes or queued jobs from YoOhw Extra Code. Review existing opt-outs before starting campaigns on a migrated site.
 
-Deactivation cancels pending delivery/dispatch jobs and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs. See docs/reliability-review.md for upgrade and recovery behavior.
+Deactivation cancels pending delivery/dispatch jobs, cancels retryable queue/schedule failures and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs. See docs/reliability-review.md for upgrade and recovery behavior.
 
 == Installation ==
 
