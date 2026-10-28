@@ -1,0 +1,1148 @@
+# Copyright (C) 2026 YoOhw Studio
+# This file is distributed under the GPLv2 or later.
+msgid ""
+msgstr ""
+"Project-Id-Version: YoOhw Advanced Notifications 0.2.2\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/yoohw-advanced-notifications\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-10-24T02:34:34+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.9.0\n"
+"X-Domain: yoohw-advanced-notifications\n"
+
+#. Plugin Name of the plugin
+msgid "YoOhw Advanced Notifications"
+msgstr ""
+
+#. Plugin URI of the plugin
+msgid "https://wordpress.org/plugins/yoohw-advanced-notifications"
+msgstr ""
+
+#. Description of the plugin
+msgid "Compose, preview, schedule and track WooCommerce customer email campaigns."
+msgstr ""
+
+#. Author of the plugin
+msgid "YoOhw Studio"
+msgstr ""
+
+#. Author URI of the plugin
+msgid "https://yoohw.com/"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:138
+msgid "Plugin deactivated before delivery."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:331
+msgid "Campaign recipients could not be prepared for background dispatch."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:337
+msgid "Recipient tracking storage is unavailable."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:365
+msgid "Invalid scheduled date/time."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:443
+msgid "Recipient dispatch storage failed."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:728
+#: includes/class-customer-email-notify.php:729
+#: includes/class-customer-email-notify.php:803
+#: includes/class-customer-email-notify.php:1294
+#: includes/class-customer-email-notify.php:1772
+msgid "Email campaigns"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:809
+#: includes/class-customer-email-notify.php:3107
+msgid "The email preview expired. Please review the form and try again."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:815
+msgid "The shared campaign content could not be stored safely, so no email jobs were created. Review the campaign log or server error log before retrying."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:821
+msgid "Draft restored from the preview. You can edit it and preview recipients again."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:825
+msgid "The draft preview expired, so the form could not be restored."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:831
+msgid "Recipients could not be prepared for background delivery, so no new email jobs were created."
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:841
+msgid "%d recipient(s) are being prepared in the background. You can leave this page; campaign status will update automatically."
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:856
+msgid "Email queued for %d recipient(s). Emails will be sent in the background."
+msgstr ""
+
+#. translators: 1: Number of recipients. 2: Scheduled local date and time.
+#: includes/class-customer-email-notify.php:872
+msgid "Email scheduled for %1$d recipient(s). Local send time: %2$s. Timezone is derived from each recipient billing country; missing country uses UTC."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:874
+msgid "the selected time"
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:888
+msgid "This campaign was already queued recently for %d recipient(s), so the duplicate submission was blocked."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:902
+msgid "Test email sent successfully."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:903
+msgid "Test email could not be sent."
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:915
+msgid "Email sent to %d recipient(s)."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:926
+#: includes/class-customer-email-notify.php:1517
+#: includes/class-customer-email-notify.php:1787
+msgid "Sender"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:930
+#: includes/class-customer-email-notify.php:1531
+#: includes/class-customer-email-notify.php:1991
+msgid "Reply-To"
+msgstr ""
+
+#. translators: %s: effective no-reply address.
+#: includes/class-customer-email-notify.php:937
+#: includes/class-customer-email-notify.php:1539
+#: includes/class-customer-email-notify.php:1999
+msgid "%s (automatic replies suppressed)"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:946
+msgid "Edit Settings"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:961
+#: includes/class-customer-email-notify.php:1356
+#: includes/class-customer-email-notify.php:1368
+#: includes/class-customer-email-notify.php:1485
+msgid "Audience"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:962
+msgid "Choose who should receive this campaign."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:968
+#: includes/class-customer-email-notify.php:1938
+msgid "Recipient source"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:976
+msgid "Product selection is only required for product customers."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:979
+#: includes/class-customer-email-notify.php:1943
+msgid "User roles"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:980
+#: includes/class-customer-email-notify.php:4755
+msgid "All roles"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:985
+msgid "Match any selected role. Leave empty for all registered users, including administrators."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:988
+msgid "Recipient email addresses"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:990
+msgid "Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Scheduled delivery uses UTC for this list."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:992
+msgid "Includes billing email addresses from processing and completed orders, including guest purchases. Each email address is included once."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:995
+#: includes/class-customer-email-notify.php:1949
+msgid "Products"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1002
+#: includes/class-customer-email-notify.php:1086
+msgid "Search products or variations"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1007
+msgid "Include matching purchases of selected products or variations."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1016
+#: includes/class-customer-email-notify.php:1355
+#: includes/class-customer-email-notify.php:1367
+#: includes/class-customer-email-notify.php:1648
+#: includes/class-customer-email-notify.php:1658
+msgid "Message"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1017
+msgid "Compose the email shown inside the WooCommerce template."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1023
+#: includes/class-customer-email-notify.php:1186
+#: includes/class-customer-email-notify.php:1481
+#: includes/class-customer-email-notify.php:2008
+msgid "Subject"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1028
+#: includes/class-customer-email-notify.php:5750
+#: includes/class-customer-email-notify.php:5960
+msgid "Email heading"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1033
+#: includes/class-customer-email-notify.php:5737
+#: includes/class-customer-email-notify.php:5961
+msgid "Message body"
+msgstr ""
+
+#. translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders.
+#: includes/class-customer-email-notify.php:1045
+msgid "Available placeholders: {customer_name}, {product_name}"
+msgstr ""
+
+#. translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders.
+#: includes/class-customer-email-notify.php:1046
+msgid "An unsubscribe link is added automatically to campaign emails."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1054
+#: includes/class-customer-email-notify.php:1501
+#: includes/class-customer-email-notify.php:1968
+msgid "Exclusions"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1055
+msgid "Remove matched recipients from the final list."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1060
+msgid "Order statuses"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1067
+msgid "No order statuses excluded"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1075
+msgid "Example: exclude users with refunded orders."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1079
+msgid "Product purchasers"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1091
+msgid "Exclude people who already bought selected products."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1095
+msgid "Manual emails"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1101
+msgid "one@example.com, two@example.com"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1102
+msgid "Comma, semicolon, space, or line break separated."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1112
+#: includes/class-customer-email-notify.php:1357
+#: includes/class-customer-email-notify.php:1369
+#: includes/class-customer-email-notify.php:1513
+#: includes/class-customer-email-notify.php:2016
+msgid "Delivery"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1113
+msgid "Choose when the campaign should be sent."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1121
+msgid "Send after confirmation"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1122
+msgid "Queue emails as soon as the preview is confirmed."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1128
+msgid "Schedule for later"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1129
+msgid "Use each recipient billing timezone when available."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1135
+msgid "Scheduled date/time"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1142
+msgid "Recipients without billing location use UTC."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1150
+msgid "Test"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1151
+msgid "Send a single email without building the campaign queue."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1158
+msgid "Enable test mode"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1159
+msgid "Only the test recipient will receive this email."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1164
+msgid "Test email address"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1176
+#: includes/class-customer-email-notify.php:1179
+msgid "Email preview"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1180
+msgid "Rendered with the active WooCommerce email template."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1182
+msgid "Live"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1187
+#: includes/class-customer-email-notify.php:5959
+msgid "Email subject"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1194
+msgid "WooCommerce email preview"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1202
+#: includes/class-customer-email-notify.php:1204
+msgid "Next step: preview recipients and confirm before sending."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1203
+msgid "Test mode sends one email to the test recipient and keeps this draft for further edits."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1208
+#: includes/class-customer-email-notify.php:1214
+msgid "Preview Recipients"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1215
+msgid "Send Test Email"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1229
+#: includes/class-customer-email-notify.php:1353
+#: includes/class-customer-email-notify.php:1365
+#: includes/class-customer-email-notify.php:1644
+#: includes/class-customer-email-notify.php:1654
+msgid "Campaign"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1233
+msgid "Campaigns & Logs"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1237
+msgid "Settings"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1282
+#: includes/class-customer-email-notify.php:1317
+msgid "Campaign list"
+msgstr ""
+
+#. translators: %s: Campaign ID.
+#: includes/class-customer-email-notify.php:1287
+#: includes/class-customer-email-notify.php:1603
+msgid "Recent campaign log"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1318
+msgid "Recent campaign previews, tests, queues, schedules, and send results are grouped by campaign."
+msgstr ""
+
+#. translators: %d: Number of campaigns.
+#: includes/class-customer-email-notify.php:1324
+msgid "%d campaign(s) stored"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1334
+msgid "No campaign history has been created yet. Preview or send a campaign to start tracking it here."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1354
+#: includes/class-customer-email-notify.php:1366
+#: includes/class-customer-email-notify.php:1646
+#: includes/class-customer-email-notify.php:1656
+msgid "Status"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1358
+#: includes/class-customer-email-notify.php:1370
+msgid "Activity"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1359
+#: includes/class-customer-email-notify.php:1371
+msgid "Updated"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1360
+#: includes/class-customer-email-notify.php:1372
+msgid "Actions"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1396
+msgid "Test campaign"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1400
+#: includes/class-customer-email-notify.php:1443
+msgid "View log"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1410
+msgid "(No subject)"
+msgstr ""
+
+#. translators: %s: Formatted creation date and time.
+#: includes/class-customer-email-notify.php:1433
+msgid "Created %s"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1467
+msgid "The selected campaign could not be found in stored history."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1473
+msgid "Campaign details"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1477
+#: includes/class-customer-email-notify.php:1934
+msgid "Campaign ID"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1497
+msgid "Scope"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1507
+msgid "None"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1567
+msgid "Reschedule failed email(s)"
+msgstr ""
+
+#. translators: %d: Number of scheduling failures.
+#: includes/class-customer-email-notify.php:1577
+msgid "%d historical schedule failure(s) found. This action retries only addresses that do not already have a newer scheduled, queued, sent, skipped, or unsubscribed event."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1588
+msgid "Historical schedule failures are recorded, but their recipient-level records are no longer complete. Automatic retry is disabled to prevent sending to the wrong or already handled recipients."
+msgstr ""
+
+#. translators: %s: Campaign ID.
+#: includes/class-customer-email-notify.php:1602
+msgid "Log for campaign %s"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1607
+msgid "Latest stored send, queue, schedule, failure, skipped, and unsubscribe events."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1611
+msgid "View all logs"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1618
+msgid "No log entries found yet."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1643
+#: includes/class-customer-email-notify.php:1653
+msgid "Time"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1645
+#: includes/class-customer-email-notify.php:1655
+#: includes/class-customer-email-notify.php:2039
+msgid "Email"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1647
+#: includes/class-customer-email-notify.php:1657
+msgid "Action ID"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1674
+msgid "unknown"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1711
+msgid "The selected campaign could not be found."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1712
+msgid "This campaign does not have enough stored email content to reschedule safely. For older campaigns, keep at least one pending scheduled action so Email campaigns can recover the message payload."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1713
+msgid "Recipient-level failure records are incomplete, so automatic retry was blocked to prevent duplicate or incorrect delivery."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1714
+msgid "The campaign content could not be stored safely, so no retry jobs were created."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1715
+msgid "Failed recipients could not be prepared for background retry."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1716
+msgid "The background retry dispatcher could not be queued."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1717
+msgid "No stuck schedule-failed recipients were found for this campaign."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1721
+msgid "The failed schedule retry could not be completed."
+msgstr ""
+
+#. translators: 1: Number of emails successfully rescheduled. 2: Number of failed retries.
+#: includes/class-customer-email-notify.php:1740
+msgid "Rescheduled %1$d failed email(s). %2$d retry attempt(s) failed."
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:1758
+msgid "%d failed recipient(s) are being prepared for retry in the background."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1778
+msgid "Email campaigns settings saved."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1792
+msgid "From email"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1804
+msgid "Used as the sender email for every campaign."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1811
+msgid "From name"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1827
+msgid "Reply-To email"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1839
+msgid "Used when automated-reply suppression is disabled."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1845
+msgid "Automated replies"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1855
+msgid "Suppress out-of-office and other automatic replies"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1858
+msgid "Adds standards-based bulk/automatic message headers while preserving delivery failure notifications."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1865
+msgid "No-reply email"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1876
+msgid "Used as Reply-To while suppression is enabled, so non-compliant automatic responders do not reach the support inbox."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1882
+msgid "Save Settings"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1894
+#: includes/class-customer-email-notify.php:1929
+msgid "Preview email campaign"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1900
+#: includes/class-customer-email-notify.php:2095
+msgid "Back to email form"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1914
+#: includes/class-customer-email-notify.php:4744
+msgid "Product customers"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1917
+#: includes/class-customer-email-notify.php:5705
+msgid "selected product(s)"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1954
+msgid "Recipients"
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:1959
+msgid "%d recipient"
+msgid_plural "%d recipients"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-customer-email-notify.php:1972
+msgid "Excluded"
+msgstr ""
+
+#. translators: 1: Number of excluded recipients. 2: Initial number of recipients.
+#: includes/class-customer-email-notify.php:1977
+msgid "%1$d removed from %2$d initial recipient(s)."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:1987
+msgid "From"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2012
+msgid "Heading"
+msgstr ""
+
+#. translators: %s: Scheduled local date and time.
+#: includes/class-customer-email-notify.php:2022
+msgid "Scheduled for %s in each recipient billing country timezone; missing country uses UTC."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2025
+msgid "Send as soon as possible after confirmation"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2034
+msgid "Recipient sample"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2038
+msgid "Name"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2040
+msgid "Billing country"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2041
+msgid "Billing state/city"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2043
+msgid "Scheduled timezone"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2044
+msgid "Scheduled send time"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2058
+msgid "UTC fallback"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2065
+msgid "Not set"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2076
+msgid "Invalid scheduled time"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2087
+msgid "Message preview"
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:2109
+msgid "Schedule Email for %d Recipient(s)"
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:2110
+msgid "Queue Email for %d Recipient(s)"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2118
+msgid "No matching customers were found. Nothing will be queued."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2133
+msgid "This unsubscribe link is invalid or expired."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2134
+msgid "Invalid unsubscribe link"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2147
+msgid "You have been unsubscribed."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2148
+msgid "This email address will be excluded from future email campaigns."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2151
+#: includes/class-customer-email-notify.php:4085
+msgid "Unsubscribed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2158
+#: includes/class-customer-email-notify.php:2211
+#: includes/class-customer-email-notify.php:2375
+msgid "Permission denied."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2173
+#: includes/class-customer-email-notify.php:2986
+msgid "Please enter a valid sender email address."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2177
+#: includes/class-customer-email-notify.php:2990
+msgid "Please enter a sender name."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2181
+#: includes/class-customer-email-notify.php:2994
+msgid "Please enter a valid Reply-To email address."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2185
+msgid "Please enter a valid no-reply email address when automated replies are suppressed."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2316
+msgid "Recipient unsubscribed before schedule retry."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2418
+msgid "Please enter a valid test email address."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2436
+msgid "Test Customer"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2549
+msgid "Duplicate submission blocked by campaign lock."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2704
+msgid "Missing campaign payload identity."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2727
+msgid "Campaign content or sender details are incomplete."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2752
+msgid "Stored campaign content does not match this campaign delivery."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2776
+msgid "Invalid shared campaign payload reference."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2791
+msgid "Shared campaign content is missing or invalid."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2802
+msgid "Shared campaign content failed its integrity check."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2831
+msgid "Email job metadata is too large for Action Scheduler. Campaign content must use shared payload storage."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2842
+msgid "Scheduled timestamp is not in the future."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2862
+msgid "as_schedule_single_action returned an empty action id"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2873
+msgid "wp_schedule_single_event returned false"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2884
+msgid "Action Scheduler is unavailable."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2896
+msgid "as_enqueue_async_action returned an empty action id"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2957
+#: includes/class-customer-email-notify.php:4778
+msgid "Please choose a valid recipient source."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2961
+msgid "Please choose a valid send time option."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2977
+msgid "Please enter a valid scheduled date/time."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2982
+msgid "Missing required fields."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:2998
+msgid "Please select at least one product."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3101
+msgid "Missing email preview token."
+msgstr ""
+
+#. translators: %s: Formatted number of items.
+#: includes/class-customer-email-notify.php:3178
+msgid "%s item"
+msgid_plural "%s items"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-customer-email-notify.php:3188
+msgid "First page"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3189
+msgid "Previous page"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3193
+msgid "Current page"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3205
+msgid "of"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3210
+msgid "Next page"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3211
+msgid "Last page"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3515
+msgid "Missing campaign ID."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:3583
+msgid "Missing campaign content needed for rescheduling."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4065
+msgid "Previewed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4066
+msgid "Testing"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4067
+msgid "Test sent"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4068
+msgid "Test failed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4069
+msgid "Queueing"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4070
+msgid "Preparing in background"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4071
+msgid "Preparing"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4072
+msgid "Queued"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4073
+msgid "Queue failed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4074
+msgid "Scheduling"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4075
+msgid "Scheduled"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4076
+msgid "Schedule failed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4077
+#: includes/class-customer-email-notify.php:5109
+msgid "Processing"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4078
+#: includes/class-customer-email-notify.php:5111
+msgid "Completed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4079
+msgid "Completed with issues"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4080
+msgid "Sent"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4081
+#: includes/class-customer-email-notify.php:5114
+msgid "Failed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4082
+msgid "Skipped"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4083
+msgid "Skipped unsubscribed"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4084
+msgid "Skipped duplicate"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4086
+msgid "Duplicate blocked"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4087
+msgid "No recipients"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4088
+#: includes/class-customer-email-notify.php:5112
+msgid "Cancelled"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4089
+msgid "Unresolved"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4090
+msgid "Unknown"
+msgstr ""
+
+#. translators: 1: Final number of recipients. 2: Excluded recipients. 3: Initial recipients.
+#: includes/class-customer-email-notify.php:4125
+msgid "%1$d recipient(s), %2$d excluded from %3$d"
+msgstr ""
+
+#. translators: %d: Number of recipients.
+#: includes/class-customer-email-notify.php:4133
+msgid "%d recipient(s)"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4140
+msgid "Test email only"
+msgstr ""
+
+#. translators: %s: Scheduled local date and time.
+#: includes/class-customer-email-notify.php:4149
+msgid "Scheduled: %s by recipient timezone"
+msgstr ""
+
+#. translators: %s: Scheduled local date and time.
+#: includes/class-customer-email-notify.php:4150
+msgid "selected time"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4154
+msgid "After confirmation"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4206
+msgid "No activity yet"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4745
+msgid "WooCommerce customers"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4746
+msgid "All registered users"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4747
+msgid "Manual email list"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4762
+#: includes/class-customer-email-notify.php:4799
+msgid "Please enter a list of valid email addresses."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4767
+msgid "The recipient list contains an invalid email address. Correct the list before continuing."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4783
+msgid "Please choose valid user roles."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4788
+msgid "A selected user role is unavailable. Review the recipient selection before continuing."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4795
+msgid "Please enter at least one recipient email address."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:4814
+msgid "Previously unsubscribed email addresses"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5092
+msgid "Do not want to receive these campaign emails?"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5094
+msgid "Unsubscribe"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5108
+msgid "Pending payment"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5110
+msgid "On hold"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5113
+msgid "Refunded"
+msgstr ""
+
+#. translators: %s: Comma-separated order status labels.
+#: includes/class-customer-email-notify.php:5175
+msgid "Order statuses: %s"
+msgstr ""
+
+#. translators: %s: Comma-separated product names.
+#: includes/class-customer-email-notify.php:5184
+msgid "Purchased products: %s"
+msgstr ""
+
+#. translators: %d: Number of excluded email addresses.
+#: includes/class-customer-email-notify.php:5193
+msgid "Manual emails: %d address"
+msgid_plural "Manual emails: %d addresses"
+msgstr[0] ""
+msgstr[1] ""
+
+#: includes/class-customer-email-notify.php:5369
+msgid "Missing required email fields or invalid recipient."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5380
+msgid "Recipient unsubscribed before send."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5393
+msgid "Recipient delivery was already claimed for this campaign."
+msgstr ""
+
+#. translators: %d: Product ID.
+#: includes/class-customer-email-notify.php:5721
+msgid "Product #%d"
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5745
+msgid "WooCommerce email template is unavailable."
+msgstr ""
+
+#: includes/class-customer-email-notify.php:5831
+msgid "WooCommerce mailer is unavailable."
+msgstr ""
+
+#: yoohw-advanced-notifications.php:43
+msgid "YoOhw Advanced Notifications requires WooCommerce to be active."
+msgstr ""

@@ -1,0 +1,503 @@
+.yoohw-advanced-notifications-sender-summary {
+	align-items: center;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px 24px;
+	margin: 0 0 16px;
+	max-width: 1680px;
+	padding: 12px 16px;
+}
+
+.yoohw-advanced-notifications-sender-summary div {
+	display: grid;
+	gap: 2px;
+	min-width: 220px;
+}
+
+.yoohw-advanced-notifications-sender-summary strong {
+	color: #1d2327;
+	font-size: 12px;
+	text-transform: uppercase;
+}
+
+.yoohw-advanced-notifications-sender-summary span {
+	color: #50575e;
+}
+
+.yoohw-advanced-notifications-sender-summary .button {
+	margin-left: auto;
+}
+
+.yoohw-advanced-notifications-subtabs {
+	margin: -4px 0 16px;
+}
+
+.yoohw-advanced-notifications-subtabs .count {
+	color: #646970;
+	font-weight: 400;
+}
+
+.yoohw-advanced-notifications-history-header {
+	align-items: flex-start;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	margin: 0 0 12px;
+	max-width: 1680px;
+}
+
+.yoohw-advanced-notifications-history-header h2 {
+	font-size: 18px;
+	line-height: 1.3;
+	margin: 0;
+}
+
+.yoohw-advanced-notifications-history-header p {
+	color: #646970;
+	margin: 4px 0 0;
+}
+
+.yoohw-advanced-notifications-history-header > span {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	color: #50575e;
+	font-weight: 600;
+	padding: 6px 10px;
+	white-space: nowrap;
+}
+
+.yoohw-advanced-notifications-history-table,
+.yoohw-advanced-notifications-log-table,
+.yoohw-advanced-notifications-detail-table,
+.yoohw-advanced-notifications-campaign-detail {
+	margin-bottom: 24px;
+	max-width: 1680px;
+}
+
+.yoohw-advanced-notifications-tablenav {
+	max-width: 1680px;
+}
+
+.yoohw-advanced-notifications-history-table .column-campaign {
+	width: 130px;
+}
+
+.yoohw-advanced-notifications-history-table.fixed {
+	table-layout: auto;
+}
+
+.yoohw-advanced-notifications-history-table .column-status {
+	width: 120px;
+}
+
+.yoohw-advanced-notifications-history-table .column-audience,
+.yoohw-advanced-notifications-history-table .column-updated {
+	width: 170px;
+}
+
+.yoohw-advanced-notifications-history-table .column-delivery {
+	width: 190px;
+}
+
+.yoohw-advanced-notifications-history-table .column-actions {
+	width: 90px;
+}
+
+.yoohw-advanced-notifications-log-table .column-time {
+	width: 170px;
+}
+
+.yoohw-advanced-notifications-log-table .column-campaign {
+	width: 130px;
+}
+
+.yoohw-advanced-notifications-log-table .column-email {
+	width: 220px;
+}
+
+.yoohw-advanced-notifications-log-table .column-status {
+	width: 150px;
+}
+
+.yoohw-advanced-notifications-log-table .column-action-id {
+	width: 90px;
+}
+
+.yoohw-advanced-notifications-history-table tr.is-selected td {
+	background: #f0f6fc;
+}
+
+.yoohw-advanced-notifications-history-table td strong,
+.yoohw-advanced-notifications-history-table td small {
+	display: block;
+}
+
+.yoohw-advanced-notifications-history-table td small {
+	color: #646970;
+	margin-top: 4px;
+}
+
+.yoohw-advanced-notifications-campaign-detail th {
+	width: 180px;
+}
+
+.yoohw-advanced-notifications-reschedule-box {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	margin: -8px 0 24px;
+	max-width: 1680px;
+	padding: 12px 16px;
+}
+
+.yoohw-advanced-notifications-reschedule-box form {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 14px;
+}
+
+.yoohw-advanced-notifications-reschedule-box .description {
+	color: #646970;
+	margin: 0;
+}
+
+.yoohw-advanced-notifications-log-section {
+	max-width: 1680px;
+}
+
+.yoohw-advanced-notifications-log-table td {
+	vertical-align: top;
+}
+
+.yoohw-advanced-notifications-status-badge {
+	border: 1px solid #c3c4c7;
+	border-radius: 999px;
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1;
+	padding: 5px 8px;
+	white-space: nowrap;
+}
+
+.yoohw-advanced-notifications-status-badge.is-success {
+	background: #edfaef;
+	border-color: #68de7c;
+	color: #008a20;
+}
+
+.yoohw-advanced-notifications-status-badge.is-error {
+	background: #fcf0f1;
+	border-color: #ffabaf;
+	color: #b32d2e;
+}
+
+.yoohw-advanced-notifications-status-badge.is-info {
+	background: #f0f6fc;
+	border-color: #72aee6;
+	color: #135e96;
+}
+
+.yoohw-advanced-notifications-status-badge.is-warning {
+	background: #fcf9e8;
+	border-color: #dba617;
+	color: #7a5600;
+}
+
+.yoohw-advanced-notifications-status-badge.is-neutral {
+	background: #f6f7f7;
+	color: #50575e;
+}
+
+.yoohw-advanced-notifications-campaign-grid {
+	align-items: start;
+	display: grid;
+	gap: 16px;
+	grid-template-columns: minmax(620px, 1fr) minmax(560px, 680px);
+	max-width: 1680px;
+}
+
+.yoohw-advanced-notifications-campaign-main {
+	display: grid;
+	gap: 16px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	min-width: 0;
+}
+
+.yoohw-advanced-notifications-panel {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	padding: 18px;
+}
+
+.yoohw-advanced-notifications-panel-wide {
+	grid-column: 1 / -1;
+}
+
+.yoohw-advanced-notifications-panel-header {
+	align-items: flex-start;
+	border-bottom: 1px solid #dcdcde;
+	display: flex;
+	gap: 12px;
+	margin: 0 0 16px;
+	padding-bottom: 14px;
+}
+
+.yoohw-advanced-notifications-step {
+	align-items: center;
+	aspect-ratio: 1 / 1;
+	background: #f0f6fc;
+	border: 1px solid #72aee6;
+	box-sizing: border-box;
+	border-radius: 50%;
+	color: #135e96;
+	display: inline-flex;
+	flex: 0 0 24px;
+	font-weight: 600;
+	height: 24px;
+	justify-content: center;
+	line-height: 1;
+	min-width: 24px;
+	width: 24px;
+}
+
+.yoohw-advanced-notifications-panel-header h2 {
+	font-size: 15px;
+	line-height: 1.4;
+	margin: 0;
+}
+
+.yoohw-advanced-notifications-panel-header p,
+.yoohw-advanced-notifications-preview-header p,
+.yoohw-advanced-notifications-field p,
+.yoohw-advanced-notifications-choice small,
+.yoohw-advanced-notifications-details small,
+.yoohw-advanced-notifications-actions span {
+	color: #646970;
+	margin: 4px 0 0;
+}
+
+.yoohw-advanced-notifications-fields {
+	display: grid;
+	gap: 16px;
+}
+
+.yoohw-advanced-notifications-fields-2 {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.yoohw-advanced-notifications-field {
+	display: grid;
+	gap: 6px;
+	min-width: 0;
+}
+
+.yoohw-advanced-notifications-field-full {
+	grid-column: 1 / -1;
+}
+
+.yoohw-advanced-notifications-field label {
+	color: #1d2327;
+	font-weight: 600;
+}
+
+.yoohw-advanced-notifications-field input[type="text"],
+.yoohw-advanced-notifications-field input[type="email"],
+.yoohw-advanced-notifications-field input[type="datetime-local"],
+.yoohw-advanced-notifications-field textarea,
+.yoohw-advanced-notifications-field select,
+.yoohw-advanced-notifications-field .regular-text,
+.yoohw-advanced-notifications-field .large-text {
+	max-width: none;
+	width: 100%;
+}
+
+.yoohw-advanced-notifications-field .select2-container {
+	max-width: 100%;
+	min-width: 0;
+	width: 100% !important;
+}
+
+.yoohw-advanced-notifications-choice-group {
+	display: grid;
+	gap: 10px;
+}
+
+.yoohw-advanced-notifications-choice {
+	align-items: flex-start;
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	cursor: pointer;
+	display: flex;
+	gap: 10px;
+	margin: 0;
+	padding: 12px;
+}
+
+.yoohw-advanced-notifications-choice input {
+	margin-top: 2px;
+}
+
+.yoohw-advanced-notifications-choice span {
+	display: grid;
+	gap: 2px;
+}
+
+.yoohw-advanced-notifications-choice strong {
+	color: #1d2327;
+}
+
+.yoohw-advanced-notifications-choice.is-selected {
+	background: #f0f6fc;
+	border-color: #72aee6;
+}
+
+.yoohw-advanced-notifications-schedule-field,
+.yoohw-advanced-notifications-test-email-field {
+	border-top: 1px solid #dcdcde;
+	margin-top: 14px;
+	padding-top: 14px;
+}
+
+.yoohw-advanced-notifications-details summary {
+	align-items: baseline;
+	cursor: pointer;
+	display: flex;
+	gap: 12px;
+	list-style: revert;
+}
+
+.yoohw-advanced-notifications-details summary span {
+	color: #1d2327;
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.yoohw-advanced-notifications-details[open] summary {
+	border-bottom: 1px solid #dcdcde;
+	margin-bottom: 16px;
+	padding-bottom: 14px;
+}
+
+.yoohw-advanced-notifications-preview-panel {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	height: calc(100vh - 64px);
+	min-height: 620px;
+	padding: 16px;
+	position: sticky;
+	top: 32px;
+}
+
+.yoohw-advanced-notifications-preview-header {
+	align-items: flex-start;
+	border-bottom: 1px solid #dcdcde;
+	display: flex;
+	gap: 12px;
+	justify-content: space-between;
+	margin: 0 0 14px;
+	padding-bottom: 12px;
+}
+
+.yoohw-advanced-notifications-preview-header h2 {
+	font-size: 15px;
+	line-height: 1.4;
+	margin: 0;
+}
+
+.yoohw-advanced-notifications-preview-header > span {
+	background: #edfaef;
+	border: 1px solid #68de7c;
+	border-radius: 999px;
+	color: #008a20;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1;
+	padding: 5px 8px;
+	text-transform: uppercase;
+}
+
+.yoohw-advanced-notifications-preview-subject {
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	display: grid;
+	gap: 4px;
+	margin-bottom: 12px;
+	padding: 10px 12px;
+}
+
+.yoohw-advanced-notifications-preview-subject strong {
+	color: #1d2327;
+	font-size: 12px;
+	text-transform: uppercase;
+}
+
+.yoohw-advanced-notifications-preview-subject span {
+	color: #2c3338;
+	overflow-wrap: anywhere;
+}
+
+.yoohw-advanced-notifications-preview-frame {
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	box-sizing: border-box;
+	display: block;
+	flex: 1 1 auto;
+	min-height: 420px;
+	width: 100%;
+}
+
+.yoohw-advanced-notifications-actions {
+	align-items: center;
+	display: flex;
+	gap: 16px;
+	justify-content: flex-end;
+	margin-top: 16px;
+	max-width: 1680px;
+}
+
+@media screen and (max-width: 1280px) {
+	.yoohw-advanced-notifications-campaign-grid {
+		grid-template-columns: minmax(0, 1fr) minmax(500px, 560px);
+	}
+}
+
+@media screen and (max-width: 1120px) {
+	.yoohw-advanced-notifications-campaign-grid,
+	.yoohw-advanced-notifications-campaign-main,
+	.yoohw-advanced-notifications-fields-2 {
+		grid-template-columns: 1fr;
+	}
+
+	.yoohw-advanced-notifications-preview-panel {
+		height: auto;
+		min-height: 0;
+		position: static;
+	}
+
+	.yoohw-advanced-notifications-preview-frame {
+		height: calc(100vh - 180px);
+		min-height: 520px;
+	}
+
+	.yoohw-advanced-notifications-actions {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.yoohw-advanced-notifications-sender-summary .button {
+		margin-left: 0;
+	}
+}

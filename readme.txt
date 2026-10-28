@@ -1,0 +1,97 @@
+=== YoOhw Advanced Notifications ===
+Contributors: yoohw
+Requires at least: 6.6
+Tested up to: 7.1
+Requires PHP: 8.1
+Requires Plugins: woocommerce
+Stable tag: 0.2.2
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Tags: woocommerce, email, notifications, marketing
+
+Compose, preview, schedule and track WooCommerce customer email campaigns.
+
+== Description ==
+
+Open Marketing > Email campaigns to create a campaign, view Campaigns & Logs, or configure sender settings.
+
+* Recipients: selected product purchasers, all WooCommerce customers with processing/completed orders (including guests), registered users with an optional role filter, or a pasted email list.
+* Role selection matches any selected role. Leaving it empty includes all registered users.
+* Manual email lists reject invalid addresses and deduplicate emails without regard to letter case. Names fall back to email addresses; scheduled delivery uses UTC.
+* Exclusions: order statuses, product purchasers, manually entered email addresses, and previous unsubscribes.
+* WooCommerce HTML email styling, rich-text editor and live preview.
+* Test email, preview and confirmation before queuing a campaign.
+* Immediate delivery through Action Scheduler, or scheduled delivery using recipient location with UTC fallback.
+* Batched dispatch, shared campaign content, duplicate protection, recipient status and campaign logs.
+* Retry recipients whose scheduling failed.
+* Configurable From, Reply-To and automated-reply suppression headers.
+* Signed unsubscribe links checked again before delivery.
+
+WooCommerce Subscriptions integration and Audience sync are not included.
+Default sender details come from WooCommerce email settings. Configure an appropriate mail transport for the site.
+
+This plugin uses its own yoohw_an_* options, hooks and recipient table. It does not import campaign history, sender settings, unsubscribes or queued jobs from YoOhw Extra Code. Review existing opt-outs before starting campaigns on a migrated site.
+
+Deactivation cancels pending delivery/dispatch jobs and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs.
+
+== Installation ==
+
+1. Install and activate WooCommerce.
+2. Install this folder as wp-content/plugins/yoohw-advanced-notifications and activate the plugin.
+3. Open Marketing > Email campaigns > Settings to review sender details.
+4. Compose a campaign, send a test email, then preview and confirm the recipient list.
+
+== Translation ==
+
+The interface, validation messages, status labels and built-in unsubscribe text use the yoohw-advanced-notifications text domain. WordPress selects the locale for each request (the user's admin language in the dashboard, and the site language for background jobs).
+
+1. Open languages/yoohw-advanced-notifications.pot in Poedit or a compatible translation editor. Loco Translate can also use this template.
+2. Create a translation for the WordPress locale, for example fr_FR (French) or vi (Vietnamese). Preserve placeholders such as %s, %1$d, {customer_name} and {product_name}.
+3. Save and compile matching PO/MO files, for example yoohw-advanced-notifications-fr_FR.po and yoohw-advanced-notifications-fr_FR.mo.
+4. Place them in wp-content/languages/plugins/ to keep them outside the plugin's update directory. Bundled translations in this plugin's languages/ directory are also supported.
+5. Select that language in WordPress Settings > General, or the administrator's profile language for the dashboard.
+
+The POT is a translation template; language translations are supplied separately. Campaign subjects, headings and messages written by the administrator, product names and previously stored log messages are not automatically translated. Existing WordPress and WooCommerce language packs provide their own strings.
+
+Regenerate the template after changing source strings:
+
+    wp i18n make-pot wp-content/plugins/yoohw-advanced-notifications wp-content/plugins/yoohw-advanced-notifications/languages/yoohw-advanced-notifications.pot --domain=yoohw-advanced-notifications --exclude=tests
+
+== Development ==
+
+The campaign implementation is adapted from YoOhw Extra Code 1.1.43 on the local yoohw site. Only the Marketing > Email notify feature is included; other site-specific extensions are excluded.
+
+Run the integration checks in a disposable WordPress + WooCommerce environment:
+
+    wp eval-file wp-content/plugins/yoohw-advanced-notifications/tests/integration.php
+
+The checks intercept outgoing mail and scheduler submissions, use synthetic fixtures, and remove their test data.
+
+To check translation loading in a local English-language installation:
+
+    wp --skip-plugins --skip-themes eval-file wp-content/plugins/yoohw-advanced-notifications/tests/internationalization.php
+
+This creates and removes a temporary French MO file. It does not change the site or account language and stops if a French language pack already exists.
+
+== Changelog ==
+
+= 0.2.2 =
+* Align the translation domain with the WordPress.org slug yoohw-advanced-notifications.
+* Resolve Plugin Check findings for SQL identifiers, input handling, test fixtures and plugin metadata.
+* Load admin JavaScript and CSS from separate files with WordPress dependencies.
+
+= 0.2.1 =
+* Register the languages directory on init and include a POT translation template.
+* Make remaining delivery messages and status labels translatable.
+* Add translator notes and translation setup instructions.
+
+= 0.2.0 =
+* Add WooCommerce customers and Manual email list recipient sources.
+* Add multi-role filtering for registered users, including preview and campaign history.
+* Preserve recipient selections when restoring drafts and retrying failed schedules.
+* Use native JavaScript trim() for the live preview.
+
+= 0.1.0 =
+* Extract standalone customer email campaigns from YoOhw Extra Code.
+* Remove WooCommerce Subscriptions audiences and exclusions, and Audience sync integration.
+* Isolate plugin storage/hooks and use the current store's sender defaults.
