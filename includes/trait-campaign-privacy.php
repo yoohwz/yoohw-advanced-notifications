@@ -144,12 +144,13 @@ trait YOOHW_AN_Campaign_Privacy {
 		echo '</select></label> <label>' . esc_html__( 'Evidence/source', 'yoohw-advanced-notifications' ) . ' <input name="evidence_source" required></label> <button class="button">' . esc_html__( 'Preview import', 'yoohw-advanced-notifications' ) . '</button></form>';
 		$preview = get_transient( 'yoohw_an_import_' . get_current_user_id() );
 		if ( $preview ) {
+			echo '<h3>' . esc_html__( 'Previewed import', 'yoohw-advanced-notifications' ) . '</h3><p>' . esc_html__( 'State / evidence source:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $preview['status'] . ' / ' . $preview['source'] ) . '</p><p class="description">' . esc_html__( 'Apply uses this saved preview. If you edit the input above, preview it again before applying.', 'yoohw-advanced-notifications' ) . '</p>';
 			echo '<p>' . esc_html__( 'Valid / duplicate or already protected / rejected:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( count( $preview['valid'] ) . ' / ' . $preview['duplicates'] . ' / ' . count( $preview['rejected'] ) ) . '</p>';
 			foreach ( $preview['rejected'] as $rejection ) { echo '<p>' . esc_html( $rejection['line'] . ': ' . $rejection['reason'] ) . '</p>'; }
 			echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="yoohw_an_data"><input type="hidden" name="operation" value="apply_import">'; wp_nonce_field( 'yoohw_an_data' ); echo '<button class="button">' . esc_html__( 'Apply previewed import', 'yoohw-advanced-notifications' ) . '</button></form>';
 		}
 		$result = get_transient( 'yoohw_an_import_result_' . get_current_user_id() );
-		if ( $result ) { echo '<p role="status">' . esc_html__( 'Applied / not applied (protected or storage failure):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $result['applied'] . ' / ' . $result['not_applied'] ) . '</p>'; }
+		if ( $result && ! $preview ) { echo '<p role="status">' . esc_html__( 'Applied / not applied (protected or storage failure):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $result['applied'] . ' / ' . $result['not_applied'] ) . '</p>'; }
 		echo '</section></div>';
 	}
 	private function clear_plugin_fallback_logs() {

@@ -1237,8 +1237,8 @@ class YOOHW_AN_Customer_Email_Notify {
 							</label><?php endif; ?>
 						</div>
 
-						<label><input type="radio" name="schedule_mode" value="store" <?php checked( 'store', $selected_schedule_mode ); ?>><?php echo esc_html__( 'One time in store timezone:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( wp_timezone_string() ); ?></label>
-						<label><input type="radio" name="schedule_mode" value="local" <?php checked( 'local', $selected_schedule_mode ); ?>><?php esc_html_e( 'Same local time per recipient (location estimate; UTC fallback)', 'yoohw-advanced-notifications' ); ?></label>
+						<label class="yoohw-advanced-notifications-choice"><input type="radio" name="schedule_mode" value="store" <?php checked( 'store', $selected_schedule_mode ); ?>><span><strong><?php echo esc_html__( 'One time in store timezone:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( wp_timezone_string() ); ?></strong><small><?php esc_html_e( 'All recipients share one UTC due time.', 'yoohw-advanced-notifications' ); ?></small></span></label>
+						<label class="yoohw-advanced-notifications-choice"><input type="radio" name="schedule_mode" value="local" <?php checked( 'local', $selected_schedule_mode ); ?>><span><strong><?php esc_html_e( 'Same local time per recipient (location estimate; UTC fallback)', 'yoohw-advanced-notifications' ); ?></strong><small><?php esc_html_e( 'Only unambiguous billing countries use a location estimate. Other countries, missing data and manual lists use UTC.', 'yoohw-advanced-notifications' ); ?></small></span></label>
 						<div id="yoohw-advanced-notifications-schedule-row" class="yoohw-advanced-notifications-field yoohw-advanced-notifications-schedule-field">
 							<label for="scheduled_at"><?php esc_html_e( 'Scheduled date/time', 'yoohw-advanced-notifications' ); ?></label>
 							<input
@@ -5406,7 +5406,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$scheme_colors = $_wp_admin_css_colors[ $scheme ]->colors ?? [];
 		$accent = sanitize_hex_color( $scheme_colors[2] ?? '' );
 		if ( $accent ) {
-			wp_add_inline_style( 'yoohw-advanced-notifications-admin', '.yoohw-an-workspace{--an-scheme-accent:' . $accent . ';}' );
+			wp_add_inline_style( 'yoohw-advanced-notifications-admin', 'body.marketing_page_yoohw-advanced-notifications,.yoohw-an-workspace{--an-scheme-accent:' . $accent . ';}' );
 		}
 
 		wp_enqueue_script( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.js', dirname( __FILE__ ) ), [ 'jquery', 'wc-enhanced-select' ], $asset_version, true );

@@ -541,7 +541,6 @@
 	box-shadow: 0 0 0 1px var(--an-accent);
 	outline-color: var(--an-accent);
 }
-.yoohw-an-workspace input[type="checkbox"]:checked::before { filter: grayscale(1); }
 .yoohw-an-workspace input[type="radio"]:checked::before { background: var(--an-accent); }
 .yoohw-an-workspace input { accent-color: var(--an-accent); }
 .yoohw-an-workspace .select2-container--default .select2-selection--multiple .select2-selection__choice,
@@ -655,4 +654,16 @@
 .an-review-facts dd { margin: 0; }
 @media screen and (max-width: 782px) {
 	.an-review-facts div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+}
+
+body.marketing_page_yoohw-advanced-notifications .select2-results__option--highlighted[data-selected],
+body.marketing_page_yoohw-advanced-notifications .select2-results__option--highlighted[aria-selected] {
+	background: var(--wp-admin-theme-color, var(--an-scheme-accent, Highlight));
+	color: #fff;
+}
+.yoohw-an-workspace .button-primary:hover,
+.yoohw-an-workspace .button-primary:active {
+	background: var(--an-accent-hover);
+	border-color: var(--an-accent-hover);
+	color: #fff;
 }
