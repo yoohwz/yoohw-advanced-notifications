@@ -21,7 +21,7 @@ trait YOOHW_AN_Campaign_Authoring {
 		$draft['draft_id'] = $id;
 		$draft['revision'] = wp_generate_uuid4();
 		$draft['updated_at'] = time();
-		if ( false === $this->write_durable_option( $key, $draft ) ) { throw new RuntimeException( 'Draft could not be saved.' ); }
+		if ( false === $this->write_personal_option( $key, $draft ) ) { throw new RuntimeException( 'Draft could not be saved.' ); }
 		return $draft;
 	}
 	private function raw_authoring_payload() {
@@ -53,7 +53,7 @@ trait YOOHW_AN_Campaign_Authoring {
 			if ( '' === $name ) { wp_die( esc_html__( 'Enter an audience name.', 'yoohw-advanced-notifications' ) ); }
 			$audience_id = sanitize_key( wp_unslash( $_POST['audience_id'] ?? '' ) ) ?: wp_generate_uuid4(); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$audience = [ 'id' => $audience_id, 'name' => $name, 'criteria' => array_intersect_key( $p, array_flip( $this->criteria_fields() ) ) ];
-			if ( false === $this->write_durable_option( 'yoohw_an_audience_' . $audience_id, $audience ) ) { wp_die( esc_html__( 'Audience could not be saved.', 'yoohw-advanced-notifications' ) ); }
+			if ( false === $this->write_personal_option( 'yoohw_an_audience_' . $audience_id, $audience ) ) { wp_die( esc_html__( 'Audience could not be saved.', 'yoohw-advanced-notifications' ) ); }
 		}
 		wp_safe_redirect( $this->get_admin_page_url( [ 'draft_id' => $draft['draft_id'], 'saved' => 1 ] ) ); exit;
 	}

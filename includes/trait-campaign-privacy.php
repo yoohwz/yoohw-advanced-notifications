@@ -2,6 +2,53 @@
 /** Subscription evidence, durable suppression, WordPress privacy and terminal retention. */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 trait YOOHW_AN_Campaign_Privacy {
+	/** Serialize personal snapshot publication with erasure, then check protective hashes at the write boundary. */
+	private function write_personal_option( $name, $value, $insert_only = false ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
+			$value = $this->scrub_erased_references( $value );
+			return $this->write_durable_option( $name, $value, $insert_only );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
+	}
+	private function set_personal_transient( $name, $value, $expiration ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { throw new RuntimeException( 'Privacy cleanup busy. Please try again.' ); }
+		try { return set_transient( $name, $this->scrub_erased_references( $value ), $expiration ); }
+		finally { $this->release_campaign_lock( '__privacy__' ); }
+	}
+	private function scrub_erased_references( $value ) {
+		// Check email tokens in structured fields, keys and free text, including stale in-memory snapshots.
+		$emails = [];
+		$collect = static function ( $item ) use ( &$collect, &$emails ) {
+			if ( is_array( $item ) ) { foreach ( $item as $key => $child ) { $collect( $key ); $collect( $child ); } return; }
+			if ( ! is_string( $item ) ) { return; }
+			preg_match_all( '/[a-z0-9!#$%&\'*+\/=?^_`{|}~.\-]+@[a-z0-9](?:[a-z0-9.\-]*[a-z0-9])?/i', $item, $matches );
+			foreach ( $matches[0] as $email ) { $emails[ strtolower( $email ) ] = true; }
+		};
+		$collect( $value );
+		foreach ( array_keys( $emails ) as $email ) {
+			if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ) { $value = $this->scrub_personal_snapshot( $value, $email ); }
+		}
+		return $value;
+	}
+	private function scrub_personal_snapshot( $value, $email ) {
+		$id = is_array( $value ) ? ( $value['campaign_id'] ?? $value['payload']['campaign_id'] ?? '' ) : '';
+		$record = $id ? ( $this->get_campaign_history()[ $id ] ?? [] ) : [];
+		$active = $id && ! in_array( $record['status'] ?? '', [ 'completed', 'completed_with_errors', 'cancelled', 'empty', 'test_sent', 'test_failed', 'previewed' ], true );
+		$content = [];
+		if ( $active ) {
+			foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'payload_hash' ] as $field ) { if ( isset( $value[ $field ] ) ) { $content[ $field ] = $value[ $field ]; } }
+			if ( isset( $value['payload']['message'] ) ) { $content['payload_content'] = array_intersect_key( $value['payload'], array_flip( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email' ] ) ); }
+		}
+		if ( isset( $value['recipients'] ) && is_array( $value['recipients'] ) ) {
+			foreach ( $value['recipients'] as &$recipient ) {
+				if ( strtolower( $recipient['email'] ?? '' ) === $email ) { $recipient = array_merge( array_intersect_key( $recipient, [ 'confirmed_due' => true ] ), [ 'email_hash' => hash( 'sha256', $email ), 'erased' => true ] ); }
+			}
+			unset( $recipient );
+		}
+		$value = $this->scrub_personal_value( $value, $email );
+		if ( isset( $content['payload_content'] ) ) { $value['payload'] = array_merge( $value['payload'], $content['payload_content'] ); unset( $content['payload_content'] ); }
+		return is_array( $value ) ? array_merge( $value, $content ) : $value;
+	}
 	private function import_subscription_preview( $text, $status, $source ) {
 		$preview = [ 'valid' => [], 'duplicates' => 0, 'rejected' => [], 'status' => $status, 'source' => $source ];
 		$seen = [];
@@ -17,6 +64,8 @@ trait YOOHW_AN_Campaign_Privacy {
 		return $preview;
 	}
 	private function record_subscription( $email, $status, $source ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
 		$email = strtolower( $email );
 		if ( ! is_email( $email ) || ! in_array( $status, [ 'subscribed', 'unsubscribed', 'unknown' ], true ) || '' === trim( $source ) ) { return false; }
 		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ) { return 'unsubscribed' === $status && $this->add_unsubscribed_email( $email ); }
@@ -25,6 +74,7 @@ trait YOOHW_AN_Campaign_Privacy {
 			if ( ! $this->add_unsubscribed_email( $email ) ) { return false; }
 		} elseif ( $this->is_email_unsubscribed( $email ) ) { return false; }
 		return false !== $this->write_durable_option( 'yoohw_an_subscription_' . hash( 'sha256', $email ), [ 'email' => $email, 'status' => $status, 'source' => $source, 'recorded_at' => time(), 'recorded_by' => get_current_user_id() ] );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 	public function handle_data_action() {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) { wp_die( esc_html__( 'Permission denied.', 'yoohw-advanced-notifications' ) ); }
@@ -43,7 +93,7 @@ trait YOOHW_AN_Campaign_Privacy {
 			$source = sanitize_text_field( wp_unslash( $_POST['evidence_source'] ?? '' ) );
 			if ( ! in_array( $status, [ 'subscribed', 'unsubscribed', 'unknown' ], true ) || '' === $source ) { wp_die( esc_html__( 'Choose a status and record its source. Subscribed requires opt-in evidence.', 'yoohw-advanced-notifications' ) ); }
 			$preview = $this->import_subscription_preview( sanitize_textarea_field( wp_unslash( $_POST['import_emails'] ?? '' ) ), $status, $source );
-			set_transient( 'yoohw_an_import_' . get_current_user_id(), $preview, 30 * MINUTE_IN_SECONDS );
+			$this->set_personal_transient( 'yoohw_an_import_' . get_current_user_id(), $preview, 30 * MINUTE_IN_SECONDS );
 		} elseif ( 'apply_import' === $operation ) {
 			$preview = get_transient( 'yoohw_an_import_' . get_current_user_id() );
 			if ( ! $preview ) { wp_die( esc_html__( 'Import preview expired. Preview again.', 'yoohw-advanced-notifications' ) ); }
@@ -139,7 +189,7 @@ trait YOOHW_AN_Campaign_Privacy {
 				foreach ( [ 'email', 'to', 'name', 'recipient_name', 'country', 'state', 'city', 'timezone', 'user_id' ] as $field ) { if ( isset( $value[ $field ] ) ) { $value[ $field ] = ''; } }
 			}
 			$result = [];
-			foreach ( $value as $key => $item ) { if ( is_string( $key ) && strtolower( $key ) === $email ) { continue; } $result[ $key ] = $this->scrub_personal_value( $item, $email ); }
+			foreach ( $value as $key => $item ) { if ( is_string( $key ) && strtolower( $key ) === $email ) { $key = hash( 'sha256', $email ); } $result[ $key ] = $this->scrub_personal_value( $item, $email ); }
 			return $result;
 		}
 		return is_string( $value ) ? str_ireplace( $email, '[erased]', $value ) : $value;
@@ -176,19 +226,16 @@ trait YOOHW_AN_Campaign_Privacy {
 				if ( $id && ! $this->acquire_campaign_lock( $id ) ) { throw new RuntimeException( 'Campaign snapshot busy. Run erasure again.' ); }
 				try {
 					$value = $this->read_durable_option( $option['option_name'] );
-					$record = $id ? ( $this->get_campaign_history()[ $id ] ?? [] ) : [];
-					$active = $id && ! in_array( $record['status'] ?? '', [ 'completed', 'completed_with_errors', 'cancelled', 'empty', 'test_sent', 'test_failed', 'previewed' ], true );
-					// Preserve active shared content/checksums. Recipient identities are still scrubbed.
-					$content = [];
-					if ( $active ) {
-						foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'payload_hash' ] as $field ) {
-							if ( isset( $value[ $field ] ) ) { $content[ $field ] = $value[ $field ]; }
+					if ( str_starts_with( $option['option_name'], 'yoohw_an_manifest_' ) && ! empty( $value['payload']['campaign_id'] ) ) {
+						foreach ( (array) ( $value['recipients'] ?? [] ) as $recipient ) {
+							if ( strtolower( $recipient['email'] ?? '' ) !== $email ) { continue; }
+							$now = current_time( 'mysql', true );
+							$due = ! empty( $recipient['confirmed_due'] ) ? gmdate( 'Y-m-d H:i:s', $recipient['confirmed_due'] ) : gmdate( 'Y-m-d H:i:s', $value['confirmed_at'] ?? time() );
+							// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Preserve the confirmed recipient cardinality without touching any existing outcome or claim.
+							if ( false === $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO %i (campaign_id,delivery_id,email_hash,email,status,scheduled_at_gmt,created_at,updated_at) VALUES (%s,%s,%s,'','cancelled',%s,%s,%s)", $this->get_recipient_tracking_table_name(), $id, ( $value['payload']['delivery_id'] ?? '' ) ?: $id, $hash, $due, $now, $now ) ) ) { throw new RuntimeException( 'Erased recipient checkpoint failed.' ); }
 						}
-						if ( isset( $value['payload']['message'] ) ) { $content['payload_content'] = array_intersect_key( $value['payload'], array_flip( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email' ] ) ); }
 					}
-					$value = $this->scrub_personal_value( $value, $email );
-					if ( isset( $content['payload_content'] ) ) { $value['payload'] = array_merge( $value['payload'], $content['payload_content'] ); unset( $content['payload_content'] ); }
-					if ( is_array( $value ) ) { $value = array_merge( $value, $content ); }
+					$value = $this->scrub_personal_snapshot( $value, $email );
 					if ( false === $this->write_durable_option( $option['option_name'], $value ) ) { throw new RuntimeException( 'Snapshot erasure failed.' ); }
 				} finally { if ( $id ) { $this->release_campaign_lock( $id ); } }
 			}

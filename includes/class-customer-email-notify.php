@@ -215,6 +215,9 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function track_recipient_status( $campaign_id, $email, $status, $action_id = 0, $message = '' ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
+		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $email ) ) ) ) { return true; }
 		$campaign_id = sanitize_text_field( $campaign_id );
 		$email       = strtolower( sanitize_email( $email ) );
 		$status      = sanitize_key( $status );
@@ -286,6 +289,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$now,
 			$now
 		) );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function get_recipient_tracking_counts( $campaign_id, $delivery_id ) {
@@ -357,6 +361,8 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients, $reference_time = null ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return new WP_Error( 'privacy_busy', __( 'Privacy cleanup is busy. Campaign preparation will resume.', 'yoohw-advanced-notifications' ) ); }
+		try {
 		$payload      = is_array( $payload ) ? $payload : [];
 		$campaign_id = isset( $payload['campaign_id'] ) ? sanitize_text_field( $payload['campaign_id'] ) : '';
 		$delivery_id = ! empty( $payload['delivery_id'] ) ? sanitize_text_field( $payload['delivery_id'] ) : $campaign_id;
@@ -380,6 +386,11 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		foreach ( $recipients as $recipient ) {
 			$confirmed_due = $recipient['confirmed_due'] ?? 0;
+			$erased_hash = ! empty( $recipient['erased'] ) ? ( $recipient['email_hash'] ?? '' ) : '';
+			if ( $erased_hash && preg_match( '/^[a-f0-9]{64}$/', $erased_hash ) && $this->read_durable_option( 'yoohw_an_erased_' . $erased_hash ) ) {
+				$rows[] = [ 'campaign_id' => $campaign_id, 'delivery_id' => $delivery_id, 'email_hash' => $erased_hash, 'email' => '', 'recipient_name' => '', 'country' => '', 'state' => '', 'city' => '', 'status' => 'cancelled', 'scheduled_at_gmt' => $confirmed_due ? gmdate( 'Y-m-d H:i:s', $confirmed_due ) : $now, 'last_error' => '' ];
+				continue;
+			}
 			$recipient = $this->sanitize_recipient_context( $recipient );
 			$email     = isset( $recipient['email'] ) ? strtolower( sanitize_email( $recipient['email'] ) ) : '';
 
@@ -387,7 +398,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				continue;
 			}
 
-			if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ) { continue; }
+			$erased = (bool) $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) );
 			$status           = 'dispatch_pending';
 			$scheduled_at_gmt = $now;
 			$last_error       = '';
@@ -410,16 +421,19 @@ class YOOHW_AN_Customer_Email_Notify {
 				'campaign_id'     => $campaign_id,
 				'delivery_id'     => $delivery_id,
 				'email_hash'      => hash( 'sha256', $email ),
-				'email'           => $email,
+				'email'           => $erased ? '' : $email,
 				'recipient_name'  => isset( $recipient['name'] ) ? sanitize_text_field( $recipient['name'] ) : '',
 				'country'         => isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '',
 				'state'           => isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '',
 				'city'            => isset( $recipient['city'] ) ? $this->normalize_location_part( $recipient['city'] ) : '',
-				'status'          => $status,
+				'status'          => $erased ? 'cancelled' : $status,
 				'scheduled_at_gmt' => $scheduled_at_gmt,
 				'last_error'      => sanitize_text_field( $last_error ),
 			];
 		}
+
+		foreach ( $rows as &$row ) { if ( 'cancelled' === $row['status'] ) { foreach ( [ 'recipient_name', 'country', 'state', 'city', 'last_error' ] as $field ) { $row[ $field ] = ''; } } }
+		unset( $row );
 
 		foreach ( array_chunk( $rows, self::RECIPIENT_INSERT_BATCH_SIZE ) as $chunk ) {
 			$placeholders = [];
@@ -449,8 +463,8 @@ class YOOHW_AN_Customer_Email_Notify {
 				(campaign_id,delivery_id,email_hash,email,recipient_name,country,state,city,status,action_id,scheduled_at_gmt,last_error,created_at,updated_at)
 				VALUES " . implode( ',', $placeholders ) . "
 				ON DUPLICATE KEY UPDATE
-					email = IF(email = '', VALUES(email), email),
-					recipient_name = IF(recipient_name = '', VALUES(recipient_name), recipient_name)";
+					email = IF(email = '' AND claim_token = '' AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait') AND VALUES(status) <> 'cancelled', VALUES(email), email),
+					recipient_name = IF(recipient_name = '' AND claim_token = '' AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait') AND VALUES(status) <> 'cancelled', VALUES(recipient_name), recipient_name)";
 
 			// The SQL consists only of the fixed statement and repeated literal placeholders above. All values, including the table identifier, are prepared.
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared bulk placeholders in the custom delivery table; uncached writes keep worker status current.
@@ -468,6 +482,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			'dispatch_pending' => isset( $counts['dispatch_pending'] ) ? absint( $counts['dispatch_pending'] ) : 0,
 			'schedule_failed'  => isset( $counts['schedule_failed'] ) ? absint( $counts['schedule_failed'] ) : $invalid,
 		];
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function enqueue_campaign_dispatch( $campaign_id ) {
@@ -2489,7 +2504,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$existing     = $this->read_durable_option( $payload_key );
 
 		if ( null === $existing ) {
-			$stored   = $this->write_durable_option( $payload_key, $record, true );
+			$stored   = $this->write_personal_option( $payload_key, $record, true );
 			$existing = $stored ? $record : $this->read_durable_option( $payload_key );
 		}
 
@@ -2842,7 +2857,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	private function store_preview_payload( $payload ) {
 		$preview_token = wp_generate_uuid4();
 
-		set_transient(
+		$this->set_personal_transient(
 			$this->get_preview_transient_key( $preview_token ),
 			$payload,
 			30 * MINUTE_IN_SECONDS
@@ -3168,7 +3183,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		array_unshift( $logs, $event );
 		$logs = array_slice( $logs, 0, self::CAMPAIGN_LOG_LIMIT );
 
-		$this->update_nonautoload_option( self::OPTION_CAMPAIGN_LOGS, $logs );
+		$this->write_personal_option( self::OPTION_CAMPAIGN_LOGS, $logs );
 		$this->increment_campaign_status_count( $event );
 
 		if (
@@ -4538,11 +4553,14 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
 		$key = 'yoohw_an_optout_' . hash( 'sha256', $email );
 		$data = $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ? [ 'suppressed' => true ] : [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
 		$this->write_durable_option( $key, $data, true );
 		$saved = $this->read_durable_option( $key );
 		return is_array( $saved ) && ( ! empty( $saved['suppressed'] ) || $email === ( $saved['email'] ?? '' ) );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function get_unsubscribe_token( $email ) {

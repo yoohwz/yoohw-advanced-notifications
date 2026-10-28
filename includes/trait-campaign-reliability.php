@@ -115,7 +115,7 @@ trait YOOHW_AN_Campaign_Reliability {
 	}
 
 	private function save_campaign_record( $campaign ) {
-		return false !== $this->write_durable_option( $this->campaign_record_key( $campaign['campaign_id'] ), $campaign );
+		return false !== $this->write_personal_option( $this->campaign_record_key( $campaign['campaign_id'] ), $campaign );
 	}
 
 	/** Connection-scoped locks have no lease that can expire while a worker is still running. */
@@ -154,7 +154,7 @@ trait YOOHW_AN_Campaign_Reliability {
 					return 0;
 				}
 				$manifest = [ 'payload' => $payload, 'recipients' => $recipients, 'confirmed_at' => time() ];
-				if ( 1 !== $this->write_durable_option( $key, $manifest, true ) ) {
+				if ( 1 !== $this->write_personal_option( $key, $manifest, true ) ) {
 					return new WP_Error( 'confirmation_store_failed', __( 'Confirmation could not be saved. Please try again.', 'yoohw-advanced-notifications' ) );
 				}
 			}
@@ -272,22 +272,29 @@ trait YOOHW_AN_Campaign_Reliability {
 
 	private function ensure_delivery_row( $campaign_id, $delivery_id, $email ) {
 		global $wpdb;
-		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $email ) ) ) || empty( $campaign_id ) || empty( $delivery_id ) || ! is_email( $email ) || ! $this->recipient_tracking_table_exists() ) {
-			return false;
-		}
-		$now = current_time( 'mysql', true );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- INSERT IGNORE uses the unique delivery/recipient key to initialize a row without resetting another worker's outcome.
-		return false !== $wpdb->query( $wpdb->prepare(
-			"INSERT IGNORE INTO %i (campaign_id,delivery_id,email_hash,email,status,created_at,updated_at) VALUES (%s,%s,%s,%s,'queued',%s,%s)",
-			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id, hash( 'sha256', strtolower( $email ) ), strtolower( $email ), $now, $now
-		) );
+		if ( empty( $campaign_id ) || empty( $delivery_id ) || ! is_email( $email ) || ! $this->recipient_tracking_table_exists() ) { return false; }
+		$hash = hash( 'sha256', strtolower( $email ) );
+		// Existing rows need no identity write. Let normal admission defer busy workers without consuming attempts.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Read current duplicate-protection identity without rewriting erased personal fields.
+		if ( $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM %i WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s', $this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id, $hash ) ) ) { return true; }
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
+			if ( $this->read_durable_option( 'yoohw_an_erased_' . $hash ) ) { return false; }
+			$now = current_time( 'mysql', true );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- INSERT IGNORE preserves existing outcomes; erased identities cannot initialize an unrelated delivery.
+			return false !== $wpdb->query( $wpdb->prepare(
+				'INSERT IGNORE INTO %i (campaign_id,delivery_id,email_hash,email,status,created_at,updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)',
+				$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id, $hash, strtolower( $email ), 'queued', $now, $now
+			) );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function finish_delivery( $campaign_id, $delivery_id, $email, $token, $status, $message = '', $error_kind = '' ) {
 		global $wpdb;
+		// An erased row must not regain personal diagnostic text from a late worker. Finalization itself never waits for privacy cleanup.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Only the worker owning this claim token may atomically finalize processing/unknown; cached updates cannot enforce ownership.
 		return 1 === $wpdb->query( $wpdb->prepare(
-			"UPDATE %i SET status = %s, last_error = %s, error_kind = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND claim_token = %s AND status IN ('processing','unknown')",
+			"UPDATE %i SET status = %s, last_error = IF(email = '', '', %s), error_kind = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND claim_token = %s AND status IN ('processing','unknown')",
 			$this->get_recipient_tracking_table_name(), $status, $message, $error_kind, current_time( 'mysql', true ), $campaign_id, $delivery_id, hash( 'sha256', strtolower( $email ) ), $token
 		) );
 	}
