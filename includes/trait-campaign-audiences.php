@@ -76,22 +76,51 @@ trait YOOHW_AN_Campaign_Audiences {
 		if ( ! empty( $f['history_mode'] ) ) {
 			global $wpdb;
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Handoff filters use durable recipient outcomes, including minimal retained hashes.
-			$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT email_hash,status FROM %i WHERE campaign_id = %s', $this->get_recipient_tracking_table_name(), $f['history_campaign'] ), ARRAY_A );
-			foreach ( $rows as $row ) { $history[ $row['email_hash'] ][] = $row['status']; }
+			$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT email_hash,status,attempts,error_kind,claim_token,delivery_id FROM %i WHERE campaign_id = %s', $this->get_recipient_tracking_table_name(), $f['history_campaign'] ), ARRAY_A );
+			if ( $wpdb->last_error ) { return []; }
+			foreach ( $rows as $row ) { $history[ $row['email_hash'] ][] = $row; }
+			$live = [];
+			if ( 'not_handoff' === $f['history_mode'] ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Include unlinked legacy/duplicate jobs; a failed row alone does not prove no send can still start.
+				$jobs = $wpdb->get_results( $wpdb->prepare( "SELECT args,extended_args FROM %i WHERE hook = %s AND status IN ('pending','in-progress') AND (args LIKE %s OR extended_args LIKE %s)", $wpdb->prefix . 'actionscheduler_actions', self::ACTION_SEND_SINGLE_EMAIL, '%' . $wpdb->esc_like( $f['history_campaign'] ) . '%', '%' . $wpdb->esc_like( $f['history_campaign'] ) . '%' ), ARRAY_A );
+				if ( $wpdb->last_error ) { return []; }
+				foreach ( $jobs as $job ) {
+					$args = json_decode( $job['extended_args'] ?: $job['args'], true )[0] ?? [];
+					if ( ( $args['campaign_id'] ?? '' ) === $f['history_campaign'] && ! empty( $args['to'] ) ) { $live[ hash( 'sha256', strtolower( $args['to'] ) ) ] = true; }
+				}
+			}
 		}
 		foreach ( $recipients as $recipient ) {
 			$email = strtolower( $recipient['email'] );
 			if ( ! empty( $f['subscription'] ) && $this->subscription_record( $email )['status'] !== $f['subscription'] ) { continue; }
 			if ( self::SOURCE_REGISTERED_USERS === $p['recipient_source'] && ! empty( $f['country'] ) && get_user_meta( $recipient['user_id'], 'billing_country', true ) !== $f['country'] ) { continue; }
 			if ( ! empty( $f['history_mode'] ) ) {
-				$states = $history[ hash( 'sha256', $email ) ] ?? [];
+				$records = $history[ hash( 'sha256', $email ) ] ?? [];
+				$states = array_column( $records, 'status' );
 				if ( 'handoff' === $f['history_mode'] && ! in_array( 'sent', $states, true ) ) { continue; }
 				// Only explicit, known unsent terminal records qualify. Missing, pending and unknown never mean "not sent".
-				if ( 'not_handoff' === $f['history_mode'] && ( ! $states || array_diff( $states, [ 'failed', 'queue_failed', 'schedule_failed', 'cancelled', 'skipped', 'skipped_unsubscribed' ] ) ) ) { continue; }
+				if ( 'not_handoff' === $f['history_mode'] ) {
+					if ( ! $records || $this->was_recipient_already_sent( $f['history_campaign'], $email ) ) { continue; }
+					foreach ( $records as $row ) {
+						if ( ! $this->known_unsent_history_row( $f['history_campaign'], $email, $row, ! empty( $live[ hash( 'sha256', $email ) ] ) ) ) { continue 2; }
+					}
+				}
 			}
 			$result[] = $recipient;
 		}
 		return $result;
+	}
+	/** Fail closed for legacy failures whose transport acceptance cannot be established. */
+	private function known_unsent_history_row( $campaign_id, $email, $row, $live_job ) {
+		if ( is_array( $this->read_durable_option( $this->get_recipient_delivery_option_name( $campaign_id, $row['delivery_id'], $email ) ) ) ) { return false; }
+		if ( 'cancelled' === $row['status'] ) {
+			$control = $this->campaign_control( $campaign_id );
+			$record = $this->read_durable_option( $this->campaign_record_key( $campaign_id ) );
+			return ! empty( $control['cancelled'] ) || ! empty( $record['cancelled'] );
+		}
+		if ( $live_job ) { return false; }
+		if ( in_array( $row['status'], [ 'skipped', 'skipped_unsubscribed' ], true ) ) { return ! empty( $row['claim_token'] ); }
+		return (int) $row['attempts'] >= 3 && ( in_array( $row['status'], [ 'queue_failed', 'schedule_failed' ], true ) || ( 'failed' === $row['status'] && 'configuration' === $row['error_kind'] ) );
 	}
 	private function render_unavailable_options( $selected, $known ) {
 		foreach ( array_diff( array_map( 'strval', (array) $selected ), array_map( 'strval', $known ) ) as $value ) {

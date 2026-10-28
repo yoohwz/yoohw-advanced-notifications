@@ -118,6 +118,21 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$assert( 'missing_history_is_not_known_unsent', [] === $call( 'get_recipients_by_payload', $unseen ) );
 		$known = array_merge( $p, [ 'filters' => [ 'history_campaign' => $id, 'history_mode' => 'not_handoff' ] ] );
 		$assert( 'known_cancelled_is_unsent_but_sent_is_not', array_column( $call( 'get_recipients_by_payload', $known ), 'email' ) === [ $r[1]['email'] ] );
+		[ $hp, $hr ] = $make( 'history-terminal', [ $tag . '-history@example.com' ] );
+		$history_filter = array_merge( $hp, [ 'filters' => [ 'history_campaign' => $hp['campaign_id'], 'history_mode' => 'not_handoff' ] ] );
+		$history_row = $state( $hp['campaign_id'] )[0];
+		foreach ( [ [ 'queue_failed', 1, '', false ], [ 'schedule_failed', 2, '', false ], [ 'failed', 1, 'configuration', false ], [ 'failed', 3, '', false ], [ 'queue_failed', 3, '', true ], [ 'schedule_failed', 3, '', true ], [ 'failed', 3, 'configuration', true ], [ 'unknown', 3, 'transport', false ] ] as [ $status, $attempts, $kind, $eligible ] ) {
+			$wpdb->update( $table, [ 'status' => $status, 'attempts' => $attempts, 'error_kind' => $kind ], [ 'id' => $history_row['id'] ] );
+			$assert( 'history_terminal_' . $status . '_' . $attempts . '_' . $kind, (bool) $call( 'get_recipients_by_payload', $history_filter ) === $eligible );
+		}
+		$wpdb->update( $table, [ 'status' => 'queue_failed', 'attempts' => 3 ], [ 'id' => $history_row['id'] ] );
+		$live_args = $call( 'build_email_action_args', $hp, $hr[0], $call( 'store_campaign_email_payload', $hp ) );
+		$live_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, [ $live_args ], 'yoohw-an-history-fixture' );
+		$assert( 'history_unlinked_live_job_is_not_terminal', $live_id && [] === $call( 'get_recipients_by_payload', $history_filter ) );
+		ActionScheduler::store()->cancel_action( $live_id );
+		$legacy_key = $call( 'get_recipient_delivery_option_name', $hp['campaign_id'], $hp['delivery_id'], $hr[0]['email'] ); $options[] = $legacy_key;
+		$call( 'write_durable_option', $legacy_key, [ 'state' => 'sending' ] );
+		$assert( 'history_legacy_claim_is_not_known_unsent', [] === $call( 'get_recipients_by_payload', $history_filter ) );
 		$erased = $r[0]['email']; $options[] = 'yoohw_an_erased_' . hash( 'sha256', $erased );
 		$export = $notify->export_personal_data( $erased );
 		$assert( 'guest_privacy_export_contains_own_recipient', str_contains( wp_json_encode( $export ), $erased ) && ! str_contains( wp_json_encode( $export ), $r[1]['email'] ) );

@@ -57,3 +57,7 @@ Nếu worker đã nhận claim đang gửi, callback thông báo giữ dữ li�
 CI runner chạy integration, internationalization, `operator-features.php`, toàn bộ reliability harness và `operator-concurrency.py` với database và Action Scheduler thật; transport được chặn. Bộ concurrency mới dùng worker độc lập, giữ transport tại barrier để thao tác pause/cancel/erasure khi có claim đang chạy, và cho hai campaign tranh cùng quota. Không chạy bộ fixture này trên database cửa hàng.
 
 Kết quả theo revision cuối được ghi trong PR và bàn giao. Kiểm tra giao diện local bằng Chrome trên site riêng, gồm draft chưa hoàn chỉnh, TinyMCE/template, preview cá nhân hóa/mobile, schedule/store-offset, xác nhận, pause/resume/cancel, duplicate, saved audience và preview/apply suppression import. Bằng chứng thử nghiệm local nằm ngoài payload phân phối.
+
+### Review correction: known unsent history
+
+The known-unsent history filter excludes recoverable failures until the existing three-attempt limit is exhausted. A terminal configuration failure requires explicit modern configuration provenance; legacy failures without that evidence remain excluded. Pending/in-progress delivery jobs (including unlinked duplicates), legacy claims and handoff evidence exclude the address. A durable campaign cancellation can establish a cancelled recipient as unsent because admission remains blocked even when a stale scheduled action exists.
