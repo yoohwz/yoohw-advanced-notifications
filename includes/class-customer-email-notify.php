@@ -151,7 +151,8 @@ class YOOHW_AN_Customer_Email_Notify {
 				current_time( 'mysql', true )
 			) );
 			foreach ( $this->get_campaign_history() as $campaign ) {
-				if ( in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
+				$unfinished_preparation = empty( $campaign['preparation_complete'] ) && is_array( $this->read_durable_option( $this->campaign_manifest_key( $campaign['campaign_id'] ) ) );
+				if ( $unfinished_preparation || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
 					$campaign['status'] = 'cancelled';
 					$campaign['cancelled'] = true;
 					$this->save_campaign_record( $campaign );
@@ -340,7 +341,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		return $statuses;
 	}
 
-	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients ) {
+	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients, $reference_time = null ) {
 		$payload      = is_array( $payload ) ? $payload : [];
 		$campaign_id = isset( $payload['campaign_id'] ) ? sanitize_text_field( $payload['campaign_id'] ) : '';
 		$delivery_id = ! empty( $payload['delivery_id'] ) ? sanitize_text_field( $payload['delivery_id'] ) : $campaign_id;
@@ -375,7 +376,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$last_error       = '';
 
 			if ( $this->is_payload_scheduled( $payload ) ) {
-				$schedule = $this->get_recipient_scheduled_delivery( $payload, $recipient );
+				$schedule = $this->get_recipient_scheduled_delivery( $payload, $recipient, true, $reference_time );
 
 				if ( empty( $schedule['timestamp'] ) ) {
 					$status           = 'failed';
@@ -522,7 +523,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				$wpdb->prepare(
 					"SELECT email_hash,email,recipient_name,country,state,city,scheduled_at_gmt
 					FROM %i
-					WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending'
+					WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3
 					ORDER BY id ASC
 					LIMIT %d",
 					$table_name,
@@ -541,7 +542,10 @@ class YOOHW_AN_Customer_Email_Notify {
 					'state'   => isset( $row['state'] ) ? $this->normalize_location_part( $row['state'] ) : '',
 					'city'    => isset( $row['city'] ) ? $this->normalize_location_part( $row['city'] ) : '',
 				];
-				$wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + 1 WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status = 'dispatch_pending'", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) );
+				// Reserve the attempt before job storage: a process can stop between those writes.
+				if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + 1 WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status = 'dispatch_pending' AND attempts < 3", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) ) ) {
+					continue;
+				}
 				$args = $this->build_email_action_args( $payload, $recipient, $payload_reference );
 
 				if ( ! empty( $row['scheduled_at_gmt'] ) && strtotime( $row['scheduled_at_gmt'] . ' UTC' ) > time() ) {
@@ -654,13 +658,20 @@ class YOOHW_AN_Customer_Email_Notify {
 			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND status IN ('queued','scheduled') AND updated_at < %s AND (scheduled_at_gmt IS NULL OR scheduled_at_gmt < %s)",
 			$this->get_recipient_tracking_table_name(), $campaign_id, gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS ), gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS )
 		) );
+		$eligible_dispatch = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3",
+			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id
+		) );
 		$pending_recipients = ( $tracking_counts['processing'] ?? 0 ) + ( $tracking_counts['queued'] ?? 0 ) + ( $tracking_counts['scheduled'] ?? 0 );
 		$unresolved = max( 0, $recipient_count - $tracked_total );
 		$campaign['recovery_message'] = '';
 		if ( ! empty( $campaign['dispatch_error'] ) ) {
 			$status = 'needs_attention';
 			$campaign['recovery_message'] = $campaign['dispatch_error'];
-		} elseif ( $dispatch_pending > 0 ) {
+		} elseif ( $dispatch_pending > 0 && 0 === $eligible_dispatch ) {
+			$status = 'needs_attention';
+			$campaign['recovery_message'] = __( 'Recipient preparation reached the limit of 3 queue attempts. Check Scheduled Actions for jobs saved before the interruption. Existing jobs may finish; recovery will not create further jobs for these recipients.', 'yoohw-advanced-notifications' );
+		} elseif ( $eligible_dispatch > 0 ) {
 			$has_dispatch = function_exists( 'as_get_scheduled_actions' ) && as_get_scheduled_actions( [ 'hook' => self::ACTION_DISPATCH_CAMPAIGN, 'args' => [ $campaign_id ], 'status' => 'pending', 'per_page' => 1 ], 'ids' );
 			$dispatch_id = $has_dispatch ? 1 : $this->enqueue_campaign_dispatch( $campaign_id );
 			$status = $dispatch_id ? 'dispatching' : 'needs_attention';
@@ -3331,6 +3342,9 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function get_schedule_retry_availability( $campaign ) {
 		global $wpdb;
+		if ( ! empty( $campaign['cancelled'] ) ) {
+			return [ 'available' => false, 'count' => 0, 'source' => 'tracking' ];
+		}
 		$id = $campaign['campaign_id'];
 		$count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND attempts < 3 AND (status IN ('dispatch_pending','queue_failed','schedule_failed') OR (status = 'failed' AND error_kind = 'configuration'))",
@@ -3808,7 +3822,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		);
 	}
 
-	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true ) {
+	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true, $reference_time = null ) {
+		$reference_time = null === $reference_time ? time() : absint( $reference_time );
 		$country       = isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '';
 		$state         = isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '';
 		$city          = isset( $recipient['city'] ) ? $this->normalize_location_part( $recipient['city'] ) : '';
@@ -3831,7 +3846,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		);
 		$rolled_forward_days = 0;
 
-		while ( $roll_forward && $scheduled_date instanceof DateTimeImmutable && $scheduled_date->getTimestamp() <= time() && $rolled_forward_days < 366 ) {
+		while ( $roll_forward && $scheduled_date instanceof DateTimeImmutable && $scheduled_date->getTimestamp() <= $reference_time && $rolled_forward_days < 366 ) {
 			$scheduled_date = $scheduled_date->modify( '+1 day' );
 			$rolled_forward_days++;
 		}

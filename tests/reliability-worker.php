@@ -46,6 +46,14 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 			return $hook === $target ? 0 : $pre;
 		}, 10, 2 );
 	}
+	if ( 'dispatch_before_job' === $fault ) {
+		add_filter( 'pre_as_enqueue_async_action', static function ( $pre, $hook ) use ( $signal, $wait ) {
+			if ( YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL === $hook ) {
+				$signal( 'before-job' ); $wait( 'never' );
+			}
+			return $pre;
+		}, 10, 2 );
+	}
 	if ( in_array( $fault, [ 'late_dispatch', 'dispatch_crash' ], true ) ) {
 		add_action( 'action_scheduler_stored_action', static function ( $action_id ) use ( $signal, $wait, $fault ) {
 			if ( YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL === ActionScheduler::store()->fetch_action( $action_id )->get_hook() ) {
@@ -72,6 +80,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 			$wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE hook IN (%s,%s)", $wpdb->prefix . 'actionscheduler_actions', YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, YOOHW_AN_Customer_Email_Notify::ACTION_DISPATCH_CAMPAIGN ) );
 			break;
 		case 'create':
+		case 'manifest':
 		case 'confirm':
 			$recipients = [];
 			for ( $i = 0; $i < ( $input['count'] ?? 1 ); $i++ ) {
@@ -83,7 +92,21 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 				$payload['scheduled_at_input'] = gmdate( 'Y-m-d\TH:i', time() + DAY_IN_SECONDS );
 				$payload['scheduled_at_timestamp'] = time() + DAY_IN_SECONDS;
 			}
-			if ( 'create' === $input['mode'] ) {
+			if ( 'manifest' === $input['mode'] ) {
+				// Simulate elapsed wall time after an interrupted confirmation; do not wait an hour.
+				$confirmed_at = time() - 2 * HOUR_IN_SECONDS;
+				$payload['schedule_mode'] = 'scheduled';
+				$payload['scheduled_at_input'] = gmdate( 'Y-m-d\TH:i', time() - HOUR_IN_SECONDS );
+				$payload['scheduled_at_timestamp'] = strtotime( $payload['scheduled_at_input'] . ' UTC' );
+				foreach ( $recipients as &$recipient ) { $recipient['country'] = ''; }
+				unset( $recipient );
+				$call( 'write_durable_option', $call( 'campaign_manifest_key', $id ), [ 'payload' => $payload, 'recipients' => $recipients, 'confirmed_at' => $confirmed_at ], true );
+				$call( 'record_campaign_snapshot', $payload, ! empty( $input['failed'] ) ? 'needs_attention' : 'preparing', [ 'recipient_count' => count( $recipients ) ] );
+				$call( 'prepare_campaign_recipients_for_dispatch', $payload, array_slice( $recipients, 0, 1 ) );
+				$due = gmdate( 'Y-m-d H:i:s', $payload['scheduled_at_timestamp'] );
+				$wpdb->query( $wpdb->prepare( "UPDATE %i SET scheduled_at_gmt = %s WHERE campaign_id = %s", $table, $due, $id ) );
+				$result = $due;
+			} elseif ( 'create' === $input['mode'] ) {
 				$call( 'record_campaign_snapshot', $payload, 'previewed', [ 'recipient_count' => count( $recipients ) ] );
 			} else {
 				$result = $call( 'confirm_campaign', $payload, $recipients );

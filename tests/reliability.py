@@ -14,6 +14,7 @@ import time
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--wp-command', required=True, help='Path to a WP-CLI executable/wrapper selecting a DISPOSABLE database')
 parser.add_argument('--output', required=True)
+parser.add_argument('--review-only', action='store_true', help='Run only the additional recovery regressions')
 args = parser.parse_args()
 out = Path(args.output).resolve()
 out.mkdir(parents=True, exist_ok=False)
@@ -94,8 +95,52 @@ def drain(**kw):
     return run('queue', **kw)
 
 
-try:
-    run('reset')
+def review_regressions():
+    campaign('failed-optout'); dispatch(); run('missing_payload', id='failed-optout'); drain()
+    check('review_fixture_is_pretransport_failure', statuses('failed-optout') == {'failed': 1})
+    run('unsubscribe', email='failed-optout-0@example.com'); run('retry', id='failed-optout'); dispatch(); drain()
+    check('pretransport_failure_optout_becomes_skipped_without_resend', statuses('failed-optout') == {'skipped_unsubscribed': 1} and mail_count('Reliability failed-optout') == 0)
+    check('opted_out_failure_is_no_longer_retryable', not run('render', id='failed-optout')['recovery'])
+
+    campaign('interruption-limit')
+    for attempt in range(3):
+        (out / 'before-job').unlink(missing_ok=True)
+        p = spawn('queue', dispatch=True, fault='dispatch_before_job')
+        wait('before-job'); p.kill(); collect(p, True)
+        run('reconcile', id='interruption-limit')
+    dispatch(fault='queue_fail')
+    data = state('interruption-limit')
+    check('dispatcher_interruptions_do_not_bypass_three_attempts', int(data['recipients'][0]['attempts']) == 3)
+    check('exhausted_dispatch_has_reason_and_no_pending_dispatcher', data['campaign']['status'] == 'needs_attention' and '3' in data['campaign']['recovery_message'] and not any(j['hook'] == 'yoohw_an_dispatch_campaign' and j['status'] == 'pending' for j in data['jobs']))
+    run('retry', id='interruption-limit'); dispatch(); drain()
+    check('manual_recovery_cannot_bypass_interrupted_dispatch_limit', int(state('interruption-limit')['recipients'][0]['attempts']) == 3 and mail_count('Reliability interruption-limit') == 0)
+
+    # A job saved on the final attempt must still be allowed to finish.
+    campaign('last-stored-job')
+    for attempt in range(2):
+        (out / 'before-job').unlink(missing_ok=True)
+        p = spawn('queue', dispatch=True, fault='dispatch_before_job')
+        wait('before-job'); p.kill(); collect(p, True)
+        run('reconcile', id='last-stored-job')
+    (out / 'dispatch-partial').unlink(missing_ok=True)
+    p = spawn('queue', dispatch=True, fault='dispatch_crash')
+    wait('dispatch-partial'); p.kill(); collect(p, True)
+    run('reconcile', id='last-stored-job'); dispatch(); drain(); run('reconcile', id='last-stored-job')
+    check('job_saved_before_final_attempt_interruption_finishes_once', statuses('last-stored-job') == {'sent': 1} and int(state('last-stored-job')['recipients'][0]['attempts']) == 3 and mail_count('Reliability last-stored-job') == 1)
+
+    due = run('manifest', id='elapsed-preparation', count=2)
+    run('reconcile', id='elapsed-preparation')
+    data = state('elapsed-preparation')
+    check('interrupted_scheduled_preparation_keeps_confirmation_due_time', len(data['recipients']) == 2 and all(row['scheduled_at_gmt'] == due for row in data['recipients']))
+    dispatch(); drain()
+    check('overdue_missing_preparation_rows_send_once_without_next_day_rollover', statuses('elapsed-preparation') == {'sent': 2} and mail_count('Reliability elapsed-preparation') == 2)
+
+    run('manifest', id='failed-preparation-deactivation', count=2, failed=True)
+    run('deactivate'); run('reconcile', id='failed-preparation-deactivation'); dispatch(); drain()
+    data = state('failed-preparation-deactivation')
+    check('deactivation_preserves_failed_preparation_cancellation', data['campaign'].get('cancelled') and len(data['recipients']) == 1 and statuses('failed-preparation-deactivation') == {'cancelled': 1} and mail_count('Reliability failed-preparation-deactivation') == 0 and not run('render', id='failed-preparation-deactivation')['recovery'])
+
+def base_regressions():
     # Concurrent confirmations persist the same manifest; real queued dispatcher jobs follow.
     run('create', id='race')
     reset_signals()
@@ -232,6 +277,12 @@ try:
     campaign('deactivation'); run('deactivate', id='deactivation')
     run('reconcile', id='deactivation'); dispatch(); drain()
     check('deactivation_does_not_recreate_cancelled_work', statuses('deactivation') == {'cancelled': 1} and mail_count('Reliability deactivation') == 0)
+
+try:
+    run('reset')
+    if not args.review_only:
+        base_regressions()
+    review_regressions()
 finally:
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
     dirty = subprocess.check_output(['git', 'status', '--porcelain'], text=True)

@@ -172,7 +172,8 @@ trait YOOHW_AN_Campaign_Reliability {
 		$payload = $manifest['payload'];
 		$this->record_campaign_snapshot( $payload, 'preparing', [ 'recipient_count' => count( $manifest['recipients'] ) ] );
 		$reference = $this->store_campaign_email_payload( $payload );
-		$result = is_wp_error( $reference ) ? $reference : $this->prepare_campaign_recipients_for_dispatch( $payload, $manifest['recipients'] );
+		// Resume against the original confirmation time, even when recovery crosses a due date.
+		$result = is_wp_error( $reference ) ? $reference : $this->prepare_campaign_recipients_for_dispatch( $payload, $manifest['recipients'], ! empty( $manifest['confirmed_at'] ) ? absint( $manifest['confirmed_at'] ) : null );
 		$history = $this->get_campaign_history();
 		$campaign = $history[ $id ];
 		$campaign['preparation_complete'] = ! is_wp_error( $result );
@@ -219,7 +220,12 @@ trait YOOHW_AN_Campaign_Reliability {
 			$known_failure = $manual && 'failed' === $row['status'] && 'configuration' === $row['error_kind'];
 			if ( ( $queue_failure || $missing_job || $known_failure ) && (int) $row['attempts'] < 3 && ( $manual || $age >= 5 * MINUTE_IN_SECONDS ) ) {
 				if ( $this->is_email_unsubscribed( $row['email'] ) ) {
-					$this->update_tracking_row_state( $id, $delivery, $row['email_hash'], 'skipped_unsubscribed', 0, __( 'Recipient unsubscribed before recovery.', 'yoohw-advanced-notifications' ) );
+					// Configuration failures retain their claim token. Match the exact snapshot so
+					// recovery can skip them without touching a worker that started meanwhile.
+					$wpdb->query( $wpdb->prepare(
+						"UPDATE %i SET status = 'skipped_unsubscribed', last_error = %s, updated_at = %s WHERE id = %d AND status = %s AND claim_token = %s",
+						$table, __( 'Recipient unsubscribed before recovery.', 'yoohw-advanced-notifications' ), current_time( 'mysql', true ), $row['id'], $row['status'], $row['claim_token']
+					) );
 					continue;
 				}
 				$wpdb->query( $wpdb->prepare(

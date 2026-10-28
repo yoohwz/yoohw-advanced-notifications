@@ -51,3 +51,14 @@ wp --skip-plugins --skip-themes eval-file wp-content/plugins/yoohw-advanced-noti
 - Phục hồi tự động phụ thuộc cron hoặc lượt mở trang quản trị. Cron ngừng hoàn toàn cần người vận hành sửa; UI hiển thị job overdue khi được mở.
 - Không khôi phục được audience lịch sử đã bị xóa trước nâng cấp nếu không còn snapshot/recipient/job. Không tự suy đoán người nhận.
 - Giữ dữ liệu campaign thay vì tự xóa theo số lượng; chưa thêm chính sách retention mới. Chỉ kiểm chứng stack local đã ghi trong PR, chưa chạy ma trận mọi phiên bản WordPress/MySQL hoặc external persistent object cache.
+
+## Tự review PR #1
+
+Review sau commit `fa240d1`, giữ nguyên phạm vi chống trùng/phục hồi/opt-out. Đã tái hiện và sửa bốn lỗi:
+
+- **[P1] Preparation lỗi có thể gửi tiếp sau deactivation.** Campaign có manifest dở nhưng trạng thái `needs_attention` không được ghi cờ hủy; reconciliation sau đó thêm recipient còn thiếu và đã handoff một thư trong ca tái hiện. Deactivation nay lưu cờ hủy cho mọi manifest chưa chuẩn bị xong và không hiển thị retry cho campaign đã hủy.
+- **[P2] Gián đoạn dispatcher vượt giới hạn retry.** `dispatch_pending` không được lọc/giữ chỗ theo `attempts < 3`; sau ba lần SIGKILL trước lưu job, lần tiếp theo tăng `attempts` lên 4. Dispatcher nay kiểm tra giới hạn ở cả chọn recipient và cập nhật nguyên tử, đồng thời dừng tạo dispatcher tiếp theo khi không còn recipient hợp lệ. Job đã lưu ở lần thứ ba vẫn được chạy và chỉ handoff một lần.
+- **[P2] Opt-out sau lỗi trước transport không chuyển sang skipped.** Claim token của `failed` được giữ lại nhưng hàm cập nhật dành cho scheduler từ chối trạng thái/token này, khiến UI tiếp tục hiển thị lỗi và cho retry. Recovery nay ghi `skipped_unsubscribed` bằng so khớp cả trạng thái và token đã đọc; không ghi đè worker đang xử lý. Opt-out vẫn được bảo toàn trước và sau sửa; ca lỗi này không gửi thêm thư.
+- **[P2] Preparation phục hồi có thể dời phần còn thiếu sang ngày hôm sau.** Recipient đã lưu giữ due time ban đầu, còn recipient chưa lưu được tính rollover theo ngày phục hồi. Hàm tính lịch nay nhận thời điểm xác nhận trong manifest; recipient cũ giữ nguyên dữ liệu và phần còn thiếu giữ đúng lịch đã xác nhận. Ca kiểm chứng mô phỏng thời gian trôi bằng timestamp trong manifest, sau đó chạy job thật và xác nhận hai recipient đều handoff đúng một lần.
+
+Mười assertion mới bao phủ các ca trên, gồm SIGKILL trước/sau lưu job, giới hạn retry tự động/thủ công, job đã lưu ở lần cuối, opt-out sau lỗi cấu hình và deactivation của preparation lỗi. Chạy riêng bằng `--review-only`, hoặc chạy cùng toàn bộ 40 kiểm tra ban đầu. Không thay schema, không di chuyển suppression, không thêm cơ chế gửi hoặc phục hồi mới. Commit cuối và kết quả chạy lại được ghi trong PR/bàn giao.
