@@ -22,6 +22,7 @@ trait YOOHW_AN_Campaign_Reliability {
 		$table = $wpdb->prefix . 'actionscheduler_actions';
 		$after = 0;
 		do {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read pending/in-progress legacy inline arguments directly so resumable import sees jobs stored by other workers.
 			$rows = $wpdb->get_results( $wpdb->prepare(
 				"SELECT action_id,args,extended_args,scheduled_date_gmt FROM %i WHERE hook = %s AND status IN ('pending','in-progress') AND action_id > %d ORDER BY action_id LIMIT 200",
 				$table, self::ACTION_SEND_SINGLE_EMAIL, $after
@@ -58,6 +59,7 @@ trait YOOHW_AN_Campaign_Reliability {
 					if ( ! $this->ensure_delivery_row( $id, $delivery, $args['to'] ) ) {
 						return;
 					}
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomically attach the legacy job only while action_id is unset; cached state could overwrite a worker's newer association.
 					if ( false === $wpdb->query( $wpdb->prepare(
 						"UPDATE %i SET action_id = %d, scheduled_at_gmt = %s, status = IF(status = 'queued' AND %s > UTC_TIMESTAMP(), 'scheduled', status) WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND action_id = 0",
 						$this->get_recipient_tracking_table_name(), $after, $row['scheduled_date_gmt'], $row['scheduled_date_gmt'], $id, $delivery, hash( 'sha256', strtolower( $args['to'] ) )
@@ -72,6 +74,7 @@ trait YOOHW_AN_Campaign_Reliability {
 
 	private function read_durable_option( $name ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Opt-outs, claims and recovery checkpoints must reflect committed writes from other processes, bypassing persistent options caches.
 		$value = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM %i WHERE option_name = %s", $wpdb->options, $name ) );
 		if ( $wpdb->last_error ) {
 			throw new RuntimeException( 'Campaign storage read failed.' );
@@ -84,7 +87,7 @@ trait YOOHW_AN_Campaign_Reliability {
 		$sql = $insert_only
 			? "INSERT IGNORE INTO %i (option_name,option_value,autoload) VALUES (%s,%s,'no')"
 			: "INSERT INTO %i (option_name,option_value,autoload) VALUES (%s,%s,'no') ON DUPLICATE KEY UPDATE option_value = VALUES(option_value), autoload = 'no'";
-		// phpcs:ignore PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.NotPrepared -- $sql selects between two fixed statements above; all identifiers and values use prepared placeholders.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.PreparedSQL.NotPrepared -- Atomic INSERT IGNORE/upsert is required for durable checkpoints; $sql selects two fixed statements with prepared identifiers/values. Options caches are invalidated below.
 		$result = $wpdb->query( $wpdb->prepare( $sql, $wpdb->options, $name, maybe_serialize( $value ) ) );
 		wp_cache_delete( $name, 'options' );
 		wp_cache_delete( 'notoptions', 'options' );
@@ -94,6 +97,7 @@ trait YOOHW_AN_Campaign_Reliability {
 
 	private function read_durable_options( $prefix ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Rebuild campaign/opt-out collections from current durable records; a cached collection can omit another worker's committed record.
 		$values = $wpdb->get_col( $wpdb->prepare( "SELECT option_value FROM %i WHERE option_name LIKE %s", $wpdb->options, $wpdb->esc_like( $prefix ) . '%' ) );
 		if ( $wpdb->last_error ) {
 			throw new RuntimeException( 'Campaign storage read failed.' );
@@ -117,12 +121,14 @@ trait YOOHW_AN_Campaign_Reliability {
 	private function acquire_campaign_lock( $campaign_id ) {
 		global $wpdb;
 		$key = 'yoohw_an_' . hash( 'sha256', DB_NAME . '|' . $wpdb->prefix . '|' . $campaign_id );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- GET_LOCK acquires a lock on this database connection; its result must never be cached or replaced with an options read/write lock.
 		return '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', substr( $key, 0, 64 ) ) );
 	}
 
 	private function release_campaign_lock( $campaign_id ) {
 		global $wpdb;
 		$key = 'yoohw_an_' . hash( 'sha256', DB_NAME . '|' . $wpdb->prefix . '|' . $campaign_id );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- RELEASE_LOCK must execute on the owning connection; returning a cached result would leave the lock held.
 		$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', substr( $key, 0, 64 ) ) );
 	}
 
@@ -190,6 +196,7 @@ trait YOOHW_AN_Campaign_Reliability {
 		$id = $campaign['campaign_id'];
 		$delivery = ! empty( $campaign['delivery_id'] ) ? $campaign['delivery_id'] : $id;
 		$table = $this->get_recipient_tracking_table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Recovery must inspect current recipient state before comparing it with the live Action Scheduler job state.
 		$rows = $wpdb->get_results( $wpdb->prepare(
 			"SELECT * FROM %i WHERE campaign_id = %s AND delivery_id = %s AND status IN ('processing','queued','scheduled','queue_failed','schedule_failed','failed')",
 			$table, $id, $delivery
@@ -206,6 +213,7 @@ trait YOOHW_AN_Campaign_Reliability {
 			}
 			if ( 'processing' === $row['status'] ) {
 				if ( $age >= 15 * MINUTE_IN_SECONDS ) {
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare status and claim token in one UPDATE so a stale worker snapshot cannot overwrite a completed handoff.
 					$wpdb->query( $wpdb->prepare(
 						"UPDATE %i SET status = 'unknown', last_error = %s WHERE id = %d AND status = 'processing' AND claim_token = %s",
 						$table, __( 'Worker stopped around mail handoff. Check the mail provider before creating a new campaign; this recipient will not be retried automatically.', 'yoohw-advanced-notifications' ), $row['id'], $row['claim_token']
@@ -223,12 +231,14 @@ trait YOOHW_AN_Campaign_Reliability {
 				if ( $this->is_email_unsubscribed( $row['email'] ) ) {
 					// Configuration failures retain their claim token. Match the exact snapshot so
 					// recovery can skip them without touching a worker that started meanwhile.
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The status/token comparison must be atomic with the opt-out skip; cached state cannot protect a concurrently running worker.
 					$wpdb->query( $wpdb->prepare(
 						"UPDATE %i SET status = 'skipped_unsubscribed', last_error = %s, updated_at = %s WHERE id = %d AND status = %s AND claim_token = %s",
 						$table, __( 'Recipient unsubscribed before recovery.', 'yoohw-advanced-notifications' ), current_time( 'mysql', true ), $row['id'], $row['status'], $row['claim_token']
 					) );
 					continue;
 				}
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomically requeue only the inspected state within the retry limit; never overwrite a claim acquired after the read.
 				$wpdb->query( $wpdb->prepare(
 					"UPDATE %i SET status = 'dispatch_pending', action_id = 0, claim_token = '', updated_at = %s WHERE id = %d AND status = %s AND attempts < 3",
 					$table, current_time( 'mysql', true ), $row['id'], $row['status']
@@ -264,6 +274,7 @@ trait YOOHW_AN_Campaign_Reliability {
 			return false;
 		}
 		$now = current_time( 'mysql', true );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- INSERT IGNORE uses the unique delivery/recipient key to initialize a row without resetting another worker's outcome.
 		return false !== $wpdb->query( $wpdb->prepare(
 			"INSERT IGNORE INTO %i (campaign_id,delivery_id,email_hash,email,status,created_at,updated_at) VALUES (%s,%s,%s,%s,'queued',%s,%s)",
 			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id, hash( 'sha256', strtolower( $email ) ), strtolower( $email ), $now, $now
@@ -272,6 +283,7 @@ trait YOOHW_AN_Campaign_Reliability {
 
 	private function finish_delivery( $campaign_id, $delivery_id, $email, $token, $status, $message = '', $error_kind = '' ) {
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Only the worker owning this claim token may atomically finalize processing/unknown; cached updates cannot enforce ownership.
 		return 1 === $wpdb->query( $wpdb->prepare(
 			"UPDATE %i SET status = %s, last_error = %s, error_kind = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND claim_token = %s AND status IN ('processing','unknown')",
 			$this->get_recipient_tracking_table_name(), $status, $message, $error_kind, current_time( 'mysql', true ), $campaign_id, $delivery_id, hash( 'sha256', strtolower( $email ) ), $token

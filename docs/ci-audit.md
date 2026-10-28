@@ -32,6 +32,12 @@ Profile 6.6/PHP 8.1 giữ `runner.log` của lần phát hiện lỗi callback �
 - Về độ phức tạp: thay đổi runtime giới hạn ở deactivation và một annotation SQL đã đối chiếu. CI tái sử dụng ba bộ test hiện có, có runner dùng chung cho ma trận và canary. Không cần thêm abstraction, service, schema migration hoặc approval gate; 41 warning direct-query/no-cache không phải blocker của review này.
 - Bằng chứng local: `pr2-review-before/results.json`, `pr2-review-before/campaign.html` và `pr2-review-fixed/` trong thư mục bằng chứng bên dưới.
 
+## Xử lý warning Plugin Check sau review
+
+Đã rà toàn bộ 41 warning `DirectQuery`/`NoCaching` tại 21 câu query. Các câu này phục vụ kiểm tra schema thực tế, khóa theo connection, compare-and-set/INSERT IGNORE và đọc trạng thái/opt-out mới nhất giữa nhiều worker. Ghi ngoại lệ với lý do cụ thể ngay tại từng câu query, theo quy ước đang có trong plugin; không tắt rule trên toàn file hoặc toàn repository và không thêm ngoại lệ bảo mật mới.
+
+Đối chiếu bằng PHP tokenizer xác nhận token thực thi của cả hai file không đổi khi bỏ comment/whitespace. Plugin Check local trên payload phân phối đã đạt **0 error, 0 warning**; log tại `plugin-check/results-warning-cleanup.log`. Các số 41 warning ở phần audit/review phía trên là kết quả trước đợt xử lý này. Kết quả hosted mới nhất được ghi trong PR.
+
 ## Bằng chứng và giới hạn
 
 - Thư mục bằng chứng: `/tmp/advanced-notifications-audit-20261028/`. Mỗi profile lưu log runner, môi trường, kết quả từng assertion và transport giả lập.
