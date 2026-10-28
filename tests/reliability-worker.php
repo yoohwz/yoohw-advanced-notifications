@@ -194,7 +194,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! getenv( 'AN_RELIABILITY_FIXTURES' ) 
 			break;
 		case 'render':
 			wp_set_current_user( 1 );
-			$_GET = [ 'tab' => 'campaigns', 'view' => 'logs', 'campaign_id' => $id ];
+			$_GET = [ 'tab' => 'campaigns', 'view' => $input['view'] ?? 'logs', 'campaign_id' => $id ];
 			ob_start(); $notify->render_page(); $html = ob_get_clean();
 			file_put_contents( $directory . '/campaign.html', $html );
 			$result = [ 'handoff_label' => str_contains( $html, 'Handed to mail system' ), 'unknown_label' => str_contains( $html, 'Outcome unknown' ), 'recovery' => str_contains( $html, 'Recover / retry eligible recipients' ) ];

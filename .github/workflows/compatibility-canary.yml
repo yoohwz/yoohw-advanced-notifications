@@ -1,0 +1,26 @@
+name: WordPress Compatibility Canary
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/compatibility-canary.yml
+      - .github/workflows/regression.yml
+      - bin/run-wp-regression.sh
+  schedule:
+    - cron: '17 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advanced-notifications-compatibility-canary-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wordpress-nightly:
+    name: WordPress nightly / PHP 8.4
+    uses: ./.github/workflows/regression.yml
+    with:
+      wordpress: nightly
+      php: '8.4'

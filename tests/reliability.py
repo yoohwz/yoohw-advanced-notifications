@@ -140,6 +140,20 @@ def review_regressions():
     data = state('failed-preparation-deactivation')
     check('deactivation_preserves_failed_preparation_cancellation', data['campaign'].get('cancelled') and len(data['recipients']) == 1 and statuses('failed-preparation-deactivation') == {'cancelled': 1} and mail_count('Reliability failed-preparation-deactivation') == 0 and not run('render', id='failed-preparation-deactivation')['recovery'])
 
+    # Queue submission failures have no pending job, but must also stop on deactivation.
+    for fault, future in [('queue_fail', False), ('schedule_fail', True)]:
+        id = 'deactivate-' + fault
+        campaign(id, future=future); dispatch(fault=fault)
+        expected = 'schedule_failed' if future else 'queue_failed'
+        check(id + '_fixture_is_retryable_failure', statuses(id) == {expected: 1})
+        run('deactivate'); run('age', id=id); run('reconcile', id=id); dispatch(); drain()
+        run('retry', id=id); dispatch(); drain()
+        data = state(id)
+        check(id + '_cannot_resume_after_reactivation', data['campaign'].get('cancelled') and statuses(id) == {'cancelled': 1} and mail_count('Reliability ' + id) == 0 and not run('render', id=id)['recovery'])
+        run('render', id=id, view='list')
+        row = (out / 'campaign.html').read_text().split('<code>' + id + '</code>', 1)[1].split('</tr>', 1)[0]
+        check(id + '_summary_matches_cancelled_recipients', data['campaign'].get('tracking_counts') == {'cancelled': 1} and 'Cancelled: 1' in row and ('Schedule failed: 1' if future else 'Queue failed: 1') not in row)
+
 def base_regressions():
     # Concurrent confirmations persist the same manifest; real queued dispatcher jobs follow.
     run('create', id='race')

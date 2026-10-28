@@ -118,6 +118,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$this->recipient_tracking_table_ready = null;
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Verify the actual columns after dbDelta before marking the upgrade complete; a cached schema could hide a failed ALTER.
 		if ( $this->recipient_tracking_table_exists() && count( array_intersect( [ 'claim_token', 'attempts', 'error_kind' ], $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $table_name ) ) ) ) === 3 ) {
 			$this->recipient_tracking_table_ready = true;
 			update_option( self::OPTION_TRACKING_SCHEMA, self::RECIPIENT_TRACKING_SCHEMA, false );
@@ -145,16 +146,18 @@ class YOOHW_AN_Customer_Email_Notify {
 			$table = $this->get_recipient_tracking_table_name();
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
 			$wpdb->query( $wpdb->prepare(
-				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled')",
+				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled', 'queue_failed', 'schedule_failed')",
 				$table,
 				__( 'Plugin deactivated before delivery.', 'yoohw-advanced-notifications' ),
 				current_time( 'mysql', true )
 			) );
 			foreach ( $this->get_campaign_history() as $campaign ) {
 				$unfinished_preparation = empty( $campaign['preparation_complete'] ) && is_array( $this->read_durable_option( $this->campaign_manifest_key( $campaign['campaign_id'] ) ) );
-				if ( $unfinished_preparation || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
+				$counts = $this->get_recipient_tracking_counts( $campaign['campaign_id'], ! empty( $campaign['delivery_id'] ) ? $campaign['delivery_id'] : $campaign['campaign_id'] );
+				if ( $unfinished_preparation || ! empty( $counts['cancelled'] ) || in_array( $campaign['status'], [ 'preparing', 'dispatching', 'queueing', 'scheduling', 'queued', 'scheduled', 'processing' ], true ) ) {
 					$campaign['status'] = 'cancelled';
 					$campaign['cancelled'] = true;
+					$campaign['tracking_counts'] = $counts;
 					$this->save_campaign_record( $campaign );
 				}
 			}
@@ -472,6 +475,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	private function update_tracking_row_state( $campaign_id, $delivery_id, $email_hash, $status, $action_id = 0, $message = '' ) {
 		global $wpdb;
 		// A late scheduler result must never overwrite a worker or a final outcome.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare status and empty claim token within the UPDATE so scheduler completion cannot regress a concurrent handoff.
 		return false !== $wpdb->query( $wpdb->prepare(
 			"UPDATE %i SET status = %s, action_id = %d, last_error = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed') AND claim_token = ''",
 			$this->get_recipient_tracking_table_name(), $status, $action_id, $message, current_time( 'mysql', true ), $campaign_id, $delivery_id, $email_hash
@@ -543,6 +547,7 @@ class YOOHW_AN_Customer_Email_Notify {
 					'city'    => isset( $row['city'] ) ? $this->normalize_location_part( $row['city'] ) : '',
 				];
 				// Reserve the attempt before job storage: a process can stop between those writes.
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Increment and enforce the retry bound atomically against current recipient state before storing a job.
 				if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + 1 WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status = 'dispatch_pending' AND attempts < 3", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) ) ) {
 					continue;
 				}
@@ -654,10 +659,12 @@ class YOOHW_AN_Customer_Email_Notify {
 		}
 
 		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Overdue detection depends on the current time and live recipient state, including handoffs completed by other workers.
 		$overdue = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND status IN ('queued','scheduled') AND updated_at < %s AND (scheduled_at_gmt IS NULL OR scheduled_at_gmt < %s)",
 			$this->get_recipient_tracking_table_name(), $campaign_id, gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS ), gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS )
 		) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count current eligible recipients before creating another dispatcher; stale counts can schedule exhausted or already claimed work.
 		$eligible_dispatch = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3",
 			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id
@@ -3346,6 +3353,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			return [ 'available' => false, 'count' => 0, 'source' => 'tracking' ];
 		}
 		$id = $campaign['campaign_id'];
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Recovery availability must reflect current status and attempt limits rather than a cached campaign summary.
 		$count = (int) $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND attempts < 3 AND (status IN ('dispatch_pending','queue_failed','schedule_failed') OR (status = 'failed' AND error_kind = 'configuration'))",
 			$this->get_recipient_tracking_table_name(), $id
@@ -4818,6 +4826,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$hash = hash( 'sha256', strtolower( $email ) );
 		if ( is_array( $legacy ) || ( $delivery_id === $campaign_id && $this->was_recipient_already_sent( $campaign_id, $email ) ) ) {
 			$status = ( ! is_array( $legacy ) || 'sent' === ( $legacy['state'] ?? '' ) ) ? 'sent' : 'unknown';
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Preserve the legacy claim only for still-unclaimed recipient states in one atomic UPDATE.
 			$wpdb->query( $wpdb->prepare(
 				"UPDATE %i SET status = %s, last_error = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','skipped_duplicate')",
 				$table, $status, __( 'Preserved a pre-upgrade delivery claim. Check the mail provider for unknown outcomes.', 'yoohw-advanced-notifications' ), $campaign_id, $delivery_id, $hash
@@ -4825,6 +4834,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 		$token = wp_generate_uuid4();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare-and-set grants exactly one worker the send claim; cached reads followed by writes could permit duplicate mail handoffs.
 		$result = $wpdb->query( $wpdb->prepare(
 			"UPDATE %i SET status = 'processing', claim_token = %s, action_id = %d, attempts = GREATEST(attempts,1), updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled') AND claim_token = ''",
 			$table, $token, $action_id, current_time( 'mysql', true ), $campaign_id, $delivery_id, $hash

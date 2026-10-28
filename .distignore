@@ -1,0 +1,15 @@
+/.DS_Store
+/.git
+/.github
+/.gitignore
+/.distignore
+/README.md
+/AGENTS.md
+/tests
+/bin
+*.zip
+/docs/ci.md
+/docs/ci-audit.md
+**/.DS_Store
+**/__pycache__
+*.pyc
