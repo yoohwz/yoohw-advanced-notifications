@@ -33,7 +33,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		}
 		if ( isset( $f['last_days'] ) && '' !== $f['last_days'] && ( ! ctype_digit( (string) $f['last_days'] ) || (int) $f['last_days'] < 1 || (int) $f['last_days'] > 36500 || ! empty( $f['date_from'] ) || ! empty( $f['date_to'] ) ) ) { return $invalid; }
 		if ( ! empty( $f['date_from'] ) && ! empty( $f['date_to'] ) && $f['date_from'] > $f['date_to'] ) { return $invalid; }
-		if ( ! empty( $f['country'] ) && ! isset( WC()->countries->get_countries()[ $f['country'] ] ) ) { return $invalid; }
+		if ( isset( $f['country'] ) && '' !== $f['country'] && ! isset( WC()->countries->get_countries()[ $f['country'] ] ) ) { return $invalid; }
 		foreach ( (array) ( $f['order_statuses'] ?? [] ) as $status ) { if ( ! isset( $this->get_order_status_options()[ $status ] ) ) { return $invalid; } }
 		foreach ( (array) ( $f['category_ids'] ?? [] ) as $id ) { if ( ! ctype_digit( (string) $id ) || ! term_exists( (int) $id, 'product_cat' ) ) { return $invalid; } }
 		if ( ! in_array( $f['subscription'] ?? '', [ '', 'subscribed', 'unsubscribed', 'unknown' ], true ) ) { return $invalid; }
@@ -41,7 +41,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		if ( ! empty( $f['history_mode'] ) ) {
 			$history = $this->get_campaign_history();
 			if ( empty( $f['history_campaign'] ) || empty( $history[ $f['history_campaign'] ] ) ) { return $invalid; }
-		} elseif ( ! empty( $f['history_campaign'] ) ) { return $invalid; }
+		} elseif ( isset( $f['history_campaign'] ) && '' !== $f['history_campaign'] ) { return $invalid; }
 		foreach ( (array) ( $p['product_ids'] ?? [] ) as $id ) { if ( ! wc_get_product( $id ) ) { return $invalid; } }
 		return true;
 	}

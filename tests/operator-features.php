@@ -138,6 +138,8 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$assert( 'filter_changes_change_campaign_hash', $call( 'generate_campaign_hash', $p ) !== $call( 'generate_campaign_hash', array_merge( $p, [ 'filters' => [ 'subscription' => 'subscribed' ] ] ) ) );
 		$assert( 'timezone_policy_changes_campaign_hash', $call( 'generate_campaign_hash', $p ) !== $call( 'generate_campaign_hash', array_merge( $p, [ 'schedule_policy' => 'strict_v1', 'store_timezone' => 'Asia/Ho_Chi_Minh' ] ) ) );
 		$assert( 'zero_day_filter_rejected', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'last_days' => '0' ] ] ) ) );
+		$assert( 'zero_country_is_invalid_not_an_empty_condition', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'country' => '0' ] ] ) ) );
+		$assert( 'zero_history_identity_is_invalid_not_an_empty_condition', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'manual_emails', 'filters' => [ 'history_campaign' => '0' ] ] ) ) );
 		$stale = [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'country' => 'ZZ', 'category_ids' => [ '99999999' ], 'order_statuses' => [ 'wc-removed' ], 'date_from' => '2026-02-30' ] ];
 		ob_start(); $call( 'render_audience_fields', $stale ); $stale_html = ob_get_clean();
 		$assert( 'unavailable_saved_conditions_remain_selected', preg_match( '/value="ZZ" selected/', $stale_html ) && preg_match( '/value="99999999" selected/', $stale_html ) && preg_match( '/value="wc-removed" selected/', $stale_html ) );
