@@ -46,7 +46,11 @@ trait YOOHW_AN_Campaign_Reliability {
 				}
 			} while ( count( $jobs ) === 200 );
 		} catch ( Throwable $error ) {
-			throw new RuntimeException( __( 'Deactivation did not complete. Some campaign cancellations may already be saved; check storage and admission workers, then retry deactivation.', 'yoohw-advanced-notifications' ), 0, $error );
+			throw new RuntimeException(
+				esc_html__( 'Deactivation did not complete. Some campaign cancellations may already be saved; check storage and admission workers, then retry deactivation.', 'yoohw-advanced-notifications' ),
+				0,
+				$error // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The third argument is the Throwable cause, not rendered output; the operator message above is escaped.
+			);
 		}
 	}
 
@@ -76,11 +80,16 @@ trait YOOHW_AN_Campaign_Reliability {
 			$params = [ $table, self::ACTION_SEND_SINGLE_EMAIL, $import_pending ? 1 : 0 ];
 			foreach ( array_keys( $privacy_wait ) as $action_id ) { $params[] = $action_id; }
 			$params[] = $after;
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- The only dynamic SQL is a list of literal %d placeholders, each supplied an integer action ID. Failed jobs are eligible only with a verified pre-handoff privacy-wait checkpoint below.
-			$rows = $wpdb->get_results( $wpdb->prepare(
-				"SELECT action_id,args,extended_args,scheduled_date_gmt,status FROM %i WHERE hook = %s AND ((%d = 1 AND status IN ('pending','in-progress')) OR " . $marked . ') AND action_id > %d ORDER BY action_id LIMIT 200',
-				$params
-			), ARRAY_A );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Recovery needs live state. The only dynamic SQL fragment contains literal syntax and generated %d tokens; all values are bound below.
+			$rows = $wpdb->get_results(
+				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The params array has the four fixed values plus exactly one integer for each generated %d action-ID placeholder.
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $marked contains only literal SQL and generated %d tokens; every action ID is bound through $params, never concatenated.
+					"SELECT action_id,args,extended_args,scheduled_date_gmt,status FROM %i WHERE hook = %s AND ((%d = 1 AND status IN ('pending','in-progress')) OR " . $marked . ') AND action_id > %d ORDER BY action_id LIMIT 200',
+					$params
+				),
+				ARRAY_A
+			);
 			if ( $wpdb->last_error ) {
 				return;
 			}
