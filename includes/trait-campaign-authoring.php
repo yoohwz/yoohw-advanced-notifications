@@ -203,7 +203,7 @@ trait YOOHW_AN_Campaign_Authoring {
 			$sample = $p['recipient_sample'][ $index ] ?? $sample;
 			echo '<p>' . esc_html__( 'Personalized sample:', 'yoohw-advanced-notifications' ) . ' ';
 			foreach ( $p['recipient_sample'] as $i => $recipient ) { echo '<a href="' . esc_url( add_query_arg( 'sample_index', $i ) ) . '">' . esc_html( $recipient['email'] ) . '</a> '; }
-			echo '</p><label>' . esc_html__( 'Preview width', 'yoohw-advanced-notifications' ) . ' <select class="an-preview-width"><option value="100%">Desktop</option><option value="375px">Mobile</option></select></label>';
+			echo '</p><label>' . esc_html__( 'Preview width', 'yoohw-advanced-notifications' ) . ' <select class="an-preview-width"><option value="100%">' . esc_html__( 'Desktop', 'yoohw-advanced-notifications' ) . '</option><option value="375px">' . esc_html__( 'Mobile', 'yoohw-advanced-notifications' ) . '</option></select></label>';
 			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $sample['name'] ?: $sample['email'], $p['products_label'] ?? '' ], $p['message'] );
 			$message = $this->append_unsubscribe_footer( $message, $sample['email'], $p['campaign_id'] );
 			$html = $this->build_woocommerce_email_body( $p['heading'], $message );
