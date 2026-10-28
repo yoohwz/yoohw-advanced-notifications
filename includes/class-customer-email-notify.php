@@ -142,6 +142,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	public function deactivate() {
 		$this->recovery_enabled = false;
+		$this->block_scheduler_campaigns_on_deactivation();
 		wp_unschedule_hook( self::ACTION_RECONCILE_CAMPAIGNS );
 		wp_unschedule_hook( self::ACTION_SEND_SINGLE_EMAIL );
 

@@ -19,10 +19,10 @@ trait YOOHW_AN_Campaign_Controls {
 		try {
 			$record = $this->get_campaign_history()[ $id ] ?? [];
 			if ( ! $record || ! empty( $record['retained'] ) ) { return new WP_Error( 'missing', __( 'Campaign unavailable.', 'yoohw-advanced-notifications' ) ); }
-			$control = $this->campaign_control( $id );
-			if ( ! empty( $control['cancelled'] ) || ! empty( $record['cancelled'] ) ) { return new WP_Error( 'cancelled', __( 'Cancelled campaigns cannot resume. Duplicate into a new draft instead.', 'yoohw-advanced-notifications' ) ); }
 			if ( ! $this->acquire_campaign_lock( '__admit_' . $id ) ) { return new WP_Error( 'busy', __( 'A recipient is being admitted. Try the control again.', 'yoohw-advanced-notifications' ) ); }
 			try {
+			$control = $this->campaign_control( $id );
+			if ( ! empty( $control['cancelled'] ) || ! empty( $record['cancelled'] ) ) { return new WP_Error( 'cancelled', __( 'Cancelled campaigns cannot resume. Duplicate into a new draft instead.', 'yoohw-advanced-notifications' ) ); }
 			$control['paused'] = 'pause' === $operation;
 			$control['cancelled'] = 'cancel' === $operation;
 			$control['changed_at'] = time();

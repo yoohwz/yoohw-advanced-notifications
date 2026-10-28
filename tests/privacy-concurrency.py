@@ -133,7 +133,7 @@ try:
     references = run('subscription_reference', tag + '-source')
     for name, passed in references.items():
         check(name + '_cannot_restore_erased_third_party', passed)
-    for case in ['normal', 'crash', 'marker-failure', 'erased', 'generic-failed', 'tampered', 'snapshot-failure', 'association-failure']:
+    for case in ['normal', 'crash', 'marker-failure', 'erased', 'generic-failed', 'tampered', 'snapshot-failure', 'association-failure', 'control-read', 'record-read']:
         reset()
         for name in ['checkpoint-written', 'release-checkpoint', 'fault-ready', 'fault-go']:
             (out / name).unlink(missing_ok=True)
@@ -158,12 +158,12 @@ try:
             run('erase', id)  # Tombstone commits while the identity writer/importer remains blocked.
         elif case == 'tampered':
             run('legacy_tamper', id, action_id=aid)
-        if case in ['snapshot-failure', 'association-failure']:
+        if case in ['snapshot-failure', 'association-failure', 'control-read', 'record-read']:
             failed_import = spawn('legacy_import_fault', id, action_id=aid, case=case)
             barrier('fault-ready')
         release()
         collect(lock)
-        if case in ['snapshot-failure', 'association-failure']:
+        if case in ['snapshot-failure', 'association-failure', 'control-read', 'record-read']:
             (out / 'fault-go').touch()
             check('legacy_' + case + '_retains_checkpoint_until_persisted', collect(failed_import))
         if case == 'crash':
@@ -187,7 +187,50 @@ try:
         run('legacy_recover', id, action_id=aid)
         after = run('legacy_inspect', id, action_id=aid)
         check('legacy_' + case + '_actual_as_recovery_handoffs_once', after['row']['status'] == 'sent' and int(after['row']['attempts']) == 1 and after['row']['scheduled_at_gmt'] == seed['due'])
-    check('legacy_recovery_no_duplicate_transport', len((out / 'transport.jsonl').read_text().splitlines()) == 8)
+    for case in ['failed-marker', 'late-publish', 'gate-write', 'gate-readback', 'gate-marker-read']:
+        reset()
+        for name in ['before-checkpoint', 'publish-checkpoint']:
+            (out / name).unlink(missing_ok=True)
+        id = tag + '-deactivate-' + case
+        lock = spawn('lock', id, locks=['__privacy__'])
+        barrier()
+        seed = run('legacy_seed', id)
+        aid = seed['action_id']
+        process = spawn('legacy_run', id, action_id=aid, hold_before_checkpoint=case == 'late-publish')
+        if case == 'late-publish':
+            barrier('before-checkpoint')
+        else:
+            check('deactivate_' + case + '_pretransport_action_failed', collect(process) == 'failed')
+        fault = {'gate-write': 'write', 'gate-readback': 'readback', 'gate-marker-read': 'marker-read'}.get(case, '')
+        result = run('legacy_deactivate', id, action_id=aid, fault=fault)
+        if fault:
+            check('deactivate_' + case + '_failure_truthful_before_unschedule_retire', result['failed'] and result['marker'] and result['pending_preserved'])
+            result = run('legacy_deactivate', id, action_id=aid)
+        check('deactivate_' + case + '_durable_gate_without_privacy_lock', not result['failed'] and result['cancelled'])
+        if case == 'late-publish':
+            (out / 'publish-checkpoint').touch()
+            check('late_marker_writer_finishes_without_handoff', collect(process) == 'failed')
+        release()
+        collect(lock)
+        run('legacy_import', id)
+        run('legacy_recover', id, action_id=aid)
+        run('legacy_recover', id, action_id=aid)
+        state = run('legacy_inspect', id, action_id=aid)
+        check('deactivate_' + case + '_reactivation_cannot_reconstruct_or_send', state['cancelled'] and not state['row'] and not state['history'] and not state['marker'])
+    id = tag + '-stale-resume'
+    for name in ['resume-before-admit', 'resume-admit']:
+        (out / name).unlink(missing_ok=True)
+    run('stale_resume_seed', id)
+    process = spawn('stale_resume', id)
+    barrier('resume-before-admit')
+    run('legacy_deactivate', id, action_id=0)
+    (out / 'resume-admit').touch()
+    resumed = collect(process)
+    check('stale_resume_cannot_overwrite_deactivation_gate', resumed['error'] == 'cancelled' and resumed['cancelled'])
+    id = tag + '-control-read-fault'
+    run('stale_resume_seed', id)
+    check('fresh_control_read_fault_cannot_overwrite_control', run('control_read_fault', id))
+    check('legacy_recovery_no_duplicate_transport', len((out / 'transport.jsonl').read_text().splitlines()) == 10)
 
 finally:
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=worker.parent.parent, text=True).strip()

@@ -13,6 +13,38 @@ trait YOOHW_AN_Campaign_Reliability {
 		$this->current_action_id = 0;
 	}
 
+	/** Cancel scheduler-only campaigns too, including a worker that has not published its privacy-wait marker yet. */
+	private function block_scheduler_campaigns_on_deactivation() {
+		if ( ! class_exists( 'ActionScheduler' ) ) { return; }
+		global $wpdb;
+		$after = 0; $seen = [];
+		try {
+			do {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Only this plugin's originals authorize cancellation. Keyset batches bound memory without snapshotting a racy marker-ID list.
+				$jobs = $wpdb->get_results( $wpdb->prepare( "SELECT action_id,args,extended_args,status FROM %i WHERE hook = %s AND status IN ('pending','in-progress','failed') AND action_id > %d ORDER BY action_id LIMIT 200", $wpdb->prefix . 'actionscheduler_actions', self::ACTION_SEND_SINGLE_EMAIL, $after ), ARRAY_A );
+				if ( $wpdb->last_error ) { throw new RuntimeException( 'Campaign cancellation jobs could not be read.' ); }
+				foreach ( $jobs as $job ) {
+					$after = (int) $job['action_id']; $args = json_decode( $job['extended_args'] ?: $job['args'], true ); $args = $args[0] ?? [];
+					if ( 'failed' === $job['status'] ) {
+						$marker = $this->read_durable_option( 'yoohw_an_privacy_wait_' . $after );
+						if ( ! is_array( $marker ) || empty( $marker['args_hash'] ) || ! hash_equals( $marker['args_hash'], hash( 'sha256', wp_json_encode( $args ) ) ) ) { continue; }
+					}
+					$id = sanitize_text_field( $args['campaign_id'] ?? '' );
+					if ( '' === $id || isset( $seen[ $id ] ) ) { continue; }
+					// No other mutex is held here. Admission/control writes share this existing domain.
+					if ( ! $this->acquire_campaign_lock( '__admit_' . $id, 2 ) ) { throw new RuntimeException( 'Campaign admission is busy.' ); }
+					try {
+						$control = $this->campaign_control( $id ); $control['cancelled'] = true; $control['changed_at'] = time();
+						if ( false === $this->write_durable_option( $this->control_key( $id ), $control ) || empty( $this->campaign_control( $id )['cancelled'] ) ) { throw new RuntimeException( 'Campaign cancellation could not be verified.' ); }
+					} finally { $this->release_campaign_lock( '__admit_' . $id ); }
+					$seen[ $id ] = true;
+				}
+			} while ( count( $jobs ) === 200 );
+		} catch ( Throwable $error ) {
+			throw new RuntimeException( __( 'Deactivation did not complete. Some campaign cancellations may already be saved; check storage and admission workers, then retry deactivation.', 'yoohw-advanced-notifications' ), 0, $error );
+		}
+	}
+
 	/** Resumable import of pending legacy jobs and verified pre-handoff privacy waits. */
 	public function maybe_import_legacy_jobs() {
 		if ( ! class_exists( 'ActionScheduler' ) ) { return; }
@@ -58,6 +90,12 @@ trait YOOHW_AN_Campaign_Reliability {
 					return;
 				}
 				try {
+					if ( ! $this->acquire_campaign_lock( '__admit_' . $id ) ) { return; }
+					try {
+						$control = $this->campaign_control( $id );
+						$record = $this->read_durable_option( $this->campaign_record_key( $id ) );
+						if ( ! empty( $control['cancelled'] ) || ! empty( $record['cancelled'] ) || ! empty( $record['retained'] ) ) { if ( $marker ) { delete_option( 'yoohw_an_privacy_wait_' . $after ); } continue; }
+						if ( ! empty( $control['paused'] ) ) { continue; }
 					$history = $this->get_campaign_history();
 					if ( empty( $history[ $id ] ) ) {
 						$payload = $this->hydrate_email_action_args( $args );
@@ -87,6 +125,7 @@ trait YOOHW_AN_Campaign_Reliability {
 						if ( ! $saved || ( ! $protected && ( (int) $saved['action_id'] !== $after || $saved['scheduled_at_gmt'] !== $row['scheduled_date_gmt'] ) ) || empty( $this->get_campaign_history()[ $id ] ) ) { return; }
 						delete_option( 'yoohw_an_privacy_wait_' . $after );
 					}
+					} finally { $this->release_campaign_lock( '__admit_' . $id ); }
 				} finally {
 					$this->release_campaign_lock( $id );
 				}

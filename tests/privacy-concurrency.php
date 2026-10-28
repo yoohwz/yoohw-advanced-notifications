@@ -22,27 +22,64 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 	} elseif ( 'legacy_run' === $input['mode'] ) {
 		$barrier = static function ( $sql ) use ( $dir, $wait ) { if ( str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, 'yoohw_an_privacy_wait_' ) ) { touch( $dir . '/checkpoint-written' ); $wait( 'release-checkpoint' ); } return $sql; };
 		$failure = static function ( $sql ) { return str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'yoohw_an_privacy_wait_' ) ? 'INSERT INTO missing_privacy_wait_fixture VALUES (1)' : $sql; };
+		$before = static function ( $sql ) use ( $dir, $wait ) { if ( str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'yoohw_an_privacy_wait_' ) ) { touch( $dir . '/before-checkpoint' ); $wait( 'publish-checkpoint' ); } return $sql; };
+		if ( ! empty( $input['hold_before_checkpoint'] ) ) { add_filter( 'query', $before ); }
 		if ( ! empty( $input['hold_checkpoint'] ) ) { add_filter( 'query', $barrier ); }
 		if ( ! empty( $input['fail_checkpoint'] ) ) { $wpdb->suppress_errors(); add_filter( 'query', $failure ); }
 		ActionScheduler_QueueRunner::instance()->process_action( $input['action_id'], 'Privacy concurrency fixture' );
-		remove_filter( 'query', $barrier ); remove_filter( 'query', $failure );
+		remove_filter( 'query', $before ); remove_filter( 'query', $barrier ); remove_filter( 'query', $failure );
 		$out = ActionScheduler::store()->get_status( $input['action_id'] );
 	} elseif ( 'legacy_inspect' === $input['mode'] ) {
 		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT email,status,attempts,action_id,scheduled_at_gmt FROM %i WHERE campaign_id = %s', $table, $id ), ARRAY_A );
 		$action = ActionScheduler::store()->fetch_action( $input['action_id'] );
-		$out = [ 'action_status' => ActionScheduler::store()->get_status( $input['action_id'] ), 'marker' => $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'row' => $row, 'history' => isset( $f( 'get_campaign_history' )[ $id ] ), 'args' => $action->get_args() ];
+		$out = [ 'action_status' => ActionScheduler::store()->get_status( $input['action_id'] ), 'marker' => $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'row' => $row, 'history' => isset( $f( 'get_campaign_history' )[ $id ] ), 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'args' => $action->get_args() ];
+	} elseif ( 'legacy_deactivate' === $input['mode'] ) {
+		$key = $f( 'control_key', $id ); $marker_key = 'yoohw_an_privacy_wait_' . $input['action_id']; $armed = false;
+		$fault = static function ( $sql ) use ( $key, $marker_key, &$armed, $input ) {
+			if ( 'marker-read' === ( $input['fault'] ?? '' ) && str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, $marker_key ) ) { return 'SELECT option_value FROM missing_deactivation_gate_fixture'; }
+			if ( ! str_contains( $sql, $key ) ) { return $sql; }
+			if ( str_starts_with( $sql, 'INSERT INTO' ) ) { $armed = true; if ( 'write' === ( $input['fault'] ?? '' ) ) { return 'INSERT INTO missing_deactivation_gate_fixture VALUES (1)'; } }
+			if ( $armed && 'readback' === ( $input['fault'] ?? '' ) && str_starts_with( $sql, 'SELECT option_value' ) ) { return 'SELECT option_value FROM missing_deactivation_gate_fixture'; }
+			return $sql;
+		};
+		$pending = 0;
+		if ( ! empty( $input['fault'] ) ) {
+			$pending = as_schedule_single_action( time() + 600, YOOHW_AN_Customer_Email_Notify::ACTION_SEND_SINGLE_EMAIL, [ array_merge( $p, [ 'campaign_id' => $id . '-extra', 'to' => $email ] ) ], YOOHW_AN_Customer_Email_Notify::ACTION_GROUP );
+			$wpdb->suppress_errors(); add_filter( 'query', $fault );
+		}
+		$failure = false;
+		try { $n->deactivate(); } catch ( RuntimeException $error ) { $failure = str_contains( $error->getMessage(), 'Deactivation did not complete' ); }
+		remove_filter( 'query', $fault );
+		$out = [ 'failed' => $failure, 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ), 'marker' => (bool) $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] ), 'pending_preserved' => ! $pending || 'pending' === ActionScheduler::store()->get_status( $pending ) ];
+	} elseif ( 'stale_resume_seed' === $input['mode'] ) {
+		$f( 'confirm_campaign', $p, [ $recipient ] ); $n->dispatch_campaign_batch( $id ); $f( 'control_campaign', $id, 'pause' ); $out = true;
+	} elseif ( 'stale_resume' === $input['mode'] ) {
+		$key = substr( 'yoohw_an_' . hash( 'sha256', DB_NAME . '|' . $wpdb->prefix . '|__admit_' . $id ), 0, 64 );
+		$once = false;
+		$barrier = static function ( $sql ) use ( $key, $dir, $wait, &$once ) { if ( ! $once && str_contains( $sql, 'GET_LOCK' ) && str_contains( $sql, $key ) ) { $once = true; touch( $dir . '/resume-before-admit' ); $wait( 'resume-admit' ); } return $sql; };
+		add_filter( 'query', $barrier ); $result = $f( 'control_campaign', $id, 'resume' ); remove_filter( 'query', $barrier );
+		$out = [ 'error' => is_wp_error( $result ) ? $result->get_error_code() : '', 'cancelled' => ! empty( $f( 'campaign_control', $id )['cancelled'] ) ];
+	} elseif ( 'control_read_fault' === $input['mode'] ) {
+		$before = $f( 'campaign_control', $id ); $key = $f( 'control_key', $id );
+		$fault = static function ( $sql ) use ( $key ) { return str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, $key ) ? 'SELECT option_value FROM missing_control_read_fixture' : $sql; };
+		$wpdb->suppress_errors(); add_filter( 'query', $fault ); $caught = false;
+		try { $f( 'control_campaign', $id, 'resume' ); } catch ( RuntimeException $error ) { $caught = true; } remove_filter( 'query', $fault );
+		$out = $caught && $before === $f( 'campaign_control', $id );
 	} elseif ( 'legacy_tamper' === $input['mode'] ) {
 		$wpdb->query( $wpdb->prepare( "UPDATE %i SET args = '[]', extended_args = NULL WHERE action_id = %d", $wpdb->prefix . 'actionscheduler_actions', $input['action_id'] ) ); $out = true;
 	} elseif ( 'legacy_fail' === $input['mode'] ) {
 		ActionScheduler::store()->mark_failure( $input['action_id'] ); $out = true;
 	} elseif ( 'legacy_import_fault' === $input['mode'] ) {
-		$fault = static function ( $sql ) use ( $input ) {
+		$key = 'control-read' === $input['case'] ? $f( 'control_key', $id ) : $f( 'campaign_record_key', $id );
+		$fault = static function ( $sql ) use ( $input, $key ) {
+			if ( in_array( $input['case'], [ 'control-read', 'record-read' ], true ) ) { return str_starts_with( $sql, 'SELECT option_value' ) && str_contains( $sql, $key ) ? 'SELECT option_value FROM missing_privacy_import_fixture' : $sql; }
 			$matches = 'snapshot-failure' === $input['case'] ? str_starts_with( $sql, 'INSERT INTO' ) && str_contains( $sql, 'yoohw_an_record_' ) : str_starts_with( $sql, 'UPDATE' ) && str_contains( $sql, 'SET action_id =' );
 			return $matches ? 'UPDATE missing_privacy_import_fixture SET missing = 1' : $sql;
 		};
 		$wpdb->suppress_errors(); add_filter( 'query', $fault ); touch( $dir . '/fault-ready' ); $wait( 'fault-go' );
-		$f( 'maybe_import_legacy_jobs' ); remove_filter( 'query', $fault );
+		$caught = false; try { $f( 'maybe_import_legacy_jobs' ); } catch ( RuntimeException $error ) { $caught = true; } remove_filter( 'query', $fault );
 		$out = (bool) $f( 'read_durable_option', 'yoohw_an_privacy_wait_' . $input['action_id'] );
+		if ( in_array( $input['case'], [ 'control-read', 'record-read' ], true ) ) { $out = $out && $caught && ! $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM %i WHERE campaign_id = %s', $table, $id ) ); }
 	} elseif ( 'legacy_import' === $input['mode'] ) {
 		$f( 'maybe_import_legacy_jobs' ); $out = true;
 	} elseif ( 'legacy_recover' === $input['mode'] ) {
