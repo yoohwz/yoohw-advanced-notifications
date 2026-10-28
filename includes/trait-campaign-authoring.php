@@ -195,6 +195,7 @@ trait YOOHW_AN_Campaign_Authoring {
 		echo '<p>' . esc_html__( 'Selected / excluded:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( ( $p['recipient_count'] ?? 0 ) . ' / ' . ( $p['excluded_count'] ?? 0 ) ) . '</p>';
 		$reason_labels = [ 'order_conditions' => __( 'Removed by order conditions', 'yoohw-advanced-notifications' ), 'subscription_or_history' => __( 'Removed by subscription or campaign history', 'yoohw-advanced-notifications' ), 'explicit_exclusions_or_suppression' => __( 'Removed by exclusions or suppression', 'yoohw-advanced-notifications' ) ];
 		foreach ( $p['audience_audit'] ?? [] as $reason => $count ) { echo '<p>' . esc_html( ( $reason_labels[ $reason ] ?? $reason ) . ': ' . $count ) . '</p>'; }
+		$this->render_audience_summary( $p );
 		$this->render_audience_inspector( $p );
 		$sample = $p['recipient_sample'][0] ?? null;
 		if ( $sample ) {

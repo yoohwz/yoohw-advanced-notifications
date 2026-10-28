@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T06:37:08+00:00\n"
+"POT-Creation-Date: 2026-10-28T06:39:06+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
@@ -565,7 +565,7 @@ msgstr ""
 #: includes/class-customer-email-notify.php:1671
 #: includes/class-customer-email-notify.php:1681
 #: includes/class-customer-email-notify.php:2065
-#: includes/trait-campaign-controls.php:145
+#: includes/trait-campaign-controls.php:148
 msgid "Email"
 msgstr ""
 
@@ -735,6 +735,7 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:2066
 #: includes/trait-campaign-audiences.php:105
+#: includes/trait-campaign-audiences.php:118
 msgid "Billing country"
 msgstr ""
 
@@ -802,7 +803,7 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:2180
 #: includes/class-customer-email-notify.php:3580
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 #: includes/trait-campaign-privacy.php:78
 msgid "Unsubscribed"
 msgstr ""
@@ -969,7 +970,7 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:3555
 #: includes/class-customer-email-notify.php:3556
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Paused"
 msgstr ""
 
@@ -1018,7 +1019,7 @@ msgid "Queued"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:3568
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Queue failed"
 msgstr ""
 
@@ -1036,7 +1037,7 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:3572
 #: includes/class-customer-email-notify.php:4603
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Processing"
 msgstr ""
 
@@ -1051,13 +1052,13 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:3575
 #: includes/trait-campaign-audiences.php:112
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Handed to mail system"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:3576
 #: includes/class-customer-email-notify.php:4608
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Failed"
 msgstr ""
 
@@ -1083,7 +1084,7 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:3583
 #: includes/class-customer-email-notify.php:4606
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Cancelled"
 msgstr ""
 
@@ -1271,6 +1272,7 @@ msgid "Categories (includes all descendants)"
 msgstr ""
 
 #: includes/trait-campaign-audiences.php:107
+#: includes/trait-campaign-audiences.php:118
 msgid "Subscription status"
 msgstr ""
 
@@ -1302,35 +1304,67 @@ msgstr ""
 msgid "Order filters use order creation time in the store timezone and match on one order, including product/variation, status and billing country. Categories include descendants and use current product categories. Registered users use profile billing country; manual lists have no country. Missing data fails the condition. History uses handoff only: unknown, pending and missing history never qualify as known unsent. Existing exclusions and durable opt-outs apply last."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:117
+#: includes/trait-campaign-audiences.php:118
+msgid "Order created from"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "Through date"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "Last N days"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "History campaign"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "Handoff condition"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "Categories including descendants"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:118
+msgid "Matching order statuses"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:119
+msgid "Saved audience conditions"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:131
 msgid "Inspect an address against current criteria"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:117
+#: includes/trait-campaign-audiences.php:131
 msgid "Inspect"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:123
+#: includes/trait-campaign-audiences.php:137
 msgid "Not in the selected source or product purchasers."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:124
+#: includes/trait-campaign-audiences.php:138
 msgid "No single order matches all order conditions, or billing country is missing/different."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:125
+#: includes/trait-campaign-audiences.php:139
 msgid "Subscription status or known campaign handoff condition does not match."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:126
+#: includes/trait-campaign-audiences.php:140
 msgid "Matched source and all conditions; removed by an explicit exclusion."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:127
+#: includes/trait-campaign-audiences.php:141
 msgid "Included: matches source and every applicable condition; no exclusion matched."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:128
+#: includes/trait-campaign-audiences.php:142
 msgid "Excluded: durable unsubscribe/suppression."
 msgstr ""
 
@@ -1462,15 +1496,15 @@ msgstr ""
 msgid "Removed by exclusions or suppression"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:203
+#: includes/trait-campaign-authoring.php:204
 msgid "Personalized sample:"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:205
+#: includes/trait-campaign-authoring.php:206
 msgid "Preview width"
 msgstr ""
 
-#: includes/trait-campaign-authoring.php:209
+#: includes/trait-campaign-authoring.php:210
 msgid "Personalized email preview"
 msgstr ""
 
@@ -1554,39 +1588,43 @@ msgstr ""
 msgid "Inspect Scheduled Actions"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:138
+#: includes/trait-campaign-controls.php:135
+msgid "Confirmed fallback count / earliest and latest due (UTC):"
+msgstr ""
+
+#: includes/trait-campaign-controls.php:141
 msgid "Find email or reason"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "All recipient states"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Waiting"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Rate limited"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:139
+#: includes/trait-campaign-controls.php:142
 msgid "Unknown"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:140
+#: includes/trait-campaign-controls.php:143
 msgid "Filter recipients"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:145
+#: includes/trait-campaign-controls.php:148
 msgid "Up to 200 matching recipients. Original due times below are UTC; pauses, queue delays and limits may delay actual handoff."
 msgstr ""
 
-#: includes/trait-campaign-controls.php:145
+#: includes/trait-campaign-controls.php:148
 msgid "State / attempts"
 msgstr ""
 
-#: includes/trait-campaign-controls.php:145
+#: includes/trait-campaign-controls.php:148
 msgid "Original due / reason"
 msgstr ""
 

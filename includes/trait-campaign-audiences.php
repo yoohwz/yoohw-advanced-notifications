@@ -103,7 +103,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		$terms = get_terms( [ 'taxonomy' => 'product_cat', 'hide_empty' => false ] );
 		foreach ( is_wp_error( $terms ) ? [] : $terms as $term ) { echo '<option value="' . esc_attr( $term->term_id ) . '" ' . selected( in_array( (string) $term->term_id, array_map( 'strval', $f['category_ids'] ?? [] ), true ), true, false ) . '>' . esc_html( $term->name ) . '</option>'; }
 		echo '</select></label></p></div><div class="an-country-filter"><label>' . esc_html__( 'Billing country', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[country]"><option value="">—</option>';
-		foreach ( WC()->countries->get_countries() as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['country'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
+		foreach ( function_exists( 'WC' ) && WC()->countries ? WC()->countries->get_countries() : [] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['country'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select></label></div><p><label>' . esc_html__( 'Subscription status', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[subscription]">';
 		foreach ( [ '' => __( 'Any (suppression still applies)', 'yoohw-advanced-notifications' ), 'subscribed' => __( 'Subscribed', 'yoohw-advanced-notifications' ), 'unknown' => __( 'No confirmation recorded', 'yoohw-advanced-notifications' ), 'unsubscribed' => __( 'Unsubscribed (excluded from sending)', 'yoohw-advanced-notifications' ) ] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['subscription'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select></label></p><label>' . esc_html__( 'Campaign history', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[history_campaign]"><option value="">—</option>';
@@ -112,6 +112,20 @@ trait YOOHW_AN_Campaign_Audiences {
 		foreach ( [ '' => '—', 'handoff' => __( 'Handed to mail system', 'yoohw-advanced-notifications' ), 'not_handoff' => __( 'Known unsent terminal outcome', 'yoohw-advanced-notifications' ) ] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['history_mode'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select></label><p>' . esc_html__( 'Order filters use order creation time in the store timezone and match on one order, including product/variation, status and billing country. Categories include descendants and use current product categories. Registered users use profile billing country; manual lists have no country. Missing data fails the condition. History uses handoff only: unknown, pending and missing history never qualify as known unsent. Existing exclusions and durable opt-outs apply last.', 'yoohw-advanced-notifications' ) . ' ' . esc_html( wp_timezone_string() ) . '</p></section>';
 	}
+	private function render_audience_summary( $p ) {
+		$f = array_filter( $p['filters'] ?? [], static function ( $value ) { return '' !== $value && [] !== $value; } );
+		if ( ! $f ) { return; }
+		$labels = [ 'date_from' => __( 'Order created from', 'yoohw-advanced-notifications' ), 'date_to' => __( 'Through date', 'yoohw-advanced-notifications' ), 'last_days' => __( 'Last N days', 'yoohw-advanced-notifications' ), 'country' => __( 'Billing country', 'yoohw-advanced-notifications' ), 'subscription' => __( 'Subscription status', 'yoohw-advanced-notifications' ), 'history_campaign' => __( 'History campaign', 'yoohw-advanced-notifications' ), 'history_mode' => __( 'Handoff condition', 'yoohw-advanced-notifications' ), 'category_ids' => __( 'Categories including descendants', 'yoohw-advanced-notifications' ), 'order_statuses' => __( 'Matching order statuses', 'yoohw-advanced-notifications' ) ];
+		echo '<h3>' . esc_html__( 'Saved audience conditions', 'yoohw-advanced-notifications' ) . '</h3><table class="widefat striped">';
+		foreach ( $f as $key => $value ) {
+			$values = (array) $value;
+			if ( 'order_statuses' === $key ) { $options = $this->get_order_status_options(); $values = array_map( static function ( $status ) use ( $options ) { return $options[ $status ] ?? $status; }, $values ); }
+			if ( 'category_ids' === $key ) { $values = array_map( static function ( $id ) { $term = get_term( (int) $id, 'product_cat' ); return $term && ! is_wp_error( $term ) ? $term->name . ' (#' . $id . ')' : '#' . $id; }, $values ); }
+			echo '<tr><th>' . esc_html( $labels[ $key ] ?? $key ) . '</th><td>' . esc_html( implode( ', ', $values ) ) . '</td></tr>';
+		}
+		echo '</table>';
+	}
+
 	private function render_audience_inspector( $p ) {
 		$email = strtolower( sanitize_email( wp_unslash( $_GET['inspect_email'] ?? '' ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only authorized preview.
 		echo '<form method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="preview_token" value="' . esc_attr( sanitize_key( wp_unslash( $_GET['preview_token'] ?? '' ) ) ) . '"><label>' . esc_html__( 'Inspect an address against current criteria', 'yoohw-advanced-notifications' ) . ' <input type="email" name="inspect_email" value="' . esc_attr( $email ) . '"></label><button class="button">' . esc_html__( 'Inspect', 'yoohw-advanced-notifications' ) . '</button></form>'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended

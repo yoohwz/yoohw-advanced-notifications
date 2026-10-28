@@ -117,7 +117,7 @@ trait YOOHW_AN_Campaign_Controls {
 		echo '<p>' . esc_html__( 'Pause/Cancel cannot recall mail already handed to the mail system. Workers admitted before the change may finish.', 'yoohw-advanced-notifications' ) . '</p>';
 		if ( ! empty( $_GET['control_saved'] ) ) { echo '<p role="status">' . esc_html__( 'Campaign control saved.', 'yoohw-advanced-notifications' ) . '</p>'; } // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		foreach ( [ 'pause' => __( 'Pause', 'yoohw-advanced-notifications' ), 'resume' => __( 'Resume', 'yoohw-advanced-notifications' ), 'cancel' => __( 'Cancel', 'yoohw-advanced-notifications' ) ] as $operation => $label ) {
-			if ( ! empty( $control['cancelled'] ) || ! empty( $campaign['cancelled'] ) || ( 'resume' === $operation && empty( $control['paused'] ) ) || ( 'pause' === $operation && ! empty( $control['paused'] ) ) ) { continue; }
+			if ( ! empty( $campaign['retained'] ) || ! empty( $control['cancelled'] ) || ! empty( $campaign['cancelled'] ) || ( 'resume' === $operation && empty( $control['paused'] ) ) || ( 'pause' === $operation && ! empty( $control['paused'] ) ) ) { continue; }
 			echo '<form class="an-inline" method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 			wp_nonce_field( 'yoohw_an_control' );
 			echo '<input type="hidden" name="action" value="yoohw_an_control"><input type="hidden" name="campaign_id" value="' . esc_attr( $id ) . '"><button class="button" name="operation" value="' . esc_attr( $operation ) . '">' . esc_html( $label ) . '</button></form> ';
@@ -130,6 +130,9 @@ trait YOOHW_AN_Campaign_Controls {
 		if ( ( $control['rate_resume_at'] ?? 0 ) > time() ) { echo '<p>' . esc_html__( 'Site sending limit: next admission check (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( gmdate( 'Y-m-d H:i:s', $control['rate_resume_at'] ) ) . '</p>'; }
 		echo '<p>' . esc_html__( 'Pending delivery jobs:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( (string) ( $campaign['pending_action_count'] ?? 0 ) ) . ' — ' . esc_html__( 'Last reconciliation:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( ! empty( $campaign['reconciled_at'] ) ? gmdate( 'Y-m-d H:i:s', $campaign['reconciled_at'] ) . ' UTC' : '—' ) . '</p>';
 		echo '<a class="button" href="' . esc_url( admin_url( 'tools.php?page=action-scheduler&s=' . rawurlencode( $id ) ) ) . '">' . esc_html__( 'Inspect Scheduled Actions', 'yoohw-advanced-notifications' ) . '</a>';
+		$this->render_audience_summary( $campaign );
+		$summary = $campaign['schedule_summary'] ?? [];
+		if ( ! empty( $summary['earliest'] ) ) { echo '<p>' . esc_html__( 'Confirmed fallback count / earliest and latest due (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $summary['fallback'] . ' / ' . gmdate( 'Y-m-d H:i:s', $summary['earliest'] ) . ' — ' . gmdate( 'Y-m-d H:i:s', $summary['latest'] ) ) . '</p>'; }
 		$this->render_recipient_diagnostics( $id );
 	}
 	private function render_recipient_diagnostics( $id ) {
