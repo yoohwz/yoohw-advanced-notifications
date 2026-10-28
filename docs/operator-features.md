@@ -13,7 +13,7 @@ Nền đối chiếu: `74353181835147d8e68d9bca87a3d801c3e772dd` trên local và
 
 ## Điều khiển, tốc độ và phục hồi
 
-Pause/Cancel và admission dùng cùng khóa theo campaign tại ranh giới nhận quyền gửi; dispatcher/preparation vẫn dùng khóa campaign hiện có. Người đã nhận claim trước thao tác được hoàn tất và ghi kết quả bằng token cũ. Pause không thay đổi due time hoặc attempts. Resume tiếp tục cùng campaign, không mở rộng audience. Cancel có cờ bền vững, không thể Resume; reconciliation, retry, dispatcher và worker đều kiểm tra. Campaign đã hủy vẫn được tổng hợp kết quả worker đang chạy. Deactivation hủy cả các trạng thái chờ mới.
+Pause/Cancel và admission dùng cùng khóa theo campaign tại ranh giới nhận quyền gửi; dispatcher/preparation vẫn dùng khóa campaign hiện có. Người đã nhận claim trước thao tác được hoàn tất và ghi kết quả bằng token cũ. Pause không thay đổi due time hoặc attempts. Resume tiếp tục cùng campaign, không mở rộng audience. Cancel có cờ bền vững, không thể Resume; reconciliation, retry, dispatcher và worker đều kiểm tra. Campaign đã hủy vẫn được tổng hợp kết quả worker đang chạy. Nếu tiến trình ngắt sau khi lưu cờ hủy nhưng trước khi cập nhật recipient, reconciliation hoàn tất bước hủy idempotent; worker vẫn bị chặn ngay bởi cờ đã lưu. Deactivation hủy cả các trạng thái chờ mới.
 
 Không thu hồi được email đã handoff. `sent` tiếp tục mang nghĩa handed to mail system; `unknown` không tự retry. Việc sửa draft/template/saved audience chỉ ảnh hưởng phiên bản soạn thảo.
 

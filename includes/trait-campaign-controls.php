@@ -28,9 +28,7 @@ trait YOOHW_AN_Campaign_Controls {
 			$control['changed_at'] = time();
 			if ( false === $this->write_durable_option( $this->control_key( $id ), $control ) ) { throw new RuntimeException( 'Control could not be saved.' ); }
 			if ( 'cancel' === $operation ) {
-				global $wpdb;
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Conditional cancellation must not overwrite an admitted worker.
-				$wpdb->query( $wpdb->prepare( "UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE campaign_id = %s AND status NOT IN ('processing','unknown','sent','skipped','skipped_unsubscribed','skipped_duplicate')", $this->get_recipient_tracking_table_name(), __( 'Cancelled before send began.', 'yoohw-advanced-notifications' ), current_time( 'mysql', true ), $id ) );
+				if ( ! $this->cancel_unstarted_recipients( $id ) ) { return new WP_Error( 'cancel_storage', __( 'Cancellation is saved and sends are blocked. Recipient state cleanup failed; check storage and reopen Campaigns & Logs to finish it.', 'yoohw-advanced-notifications' ) ); }
 				$record['cancelled'] = true;
 				$record['status'] = 'cancelled';
 				$this->save_campaign_record( $record );
@@ -45,12 +43,21 @@ trait YOOHW_AN_Campaign_Controls {
 		} finally { $this->release_campaign_lock( $id ); }
 	}
 
+	private function cancel_unstarted_recipients( $id ) {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Cancellation is resumable after its durable flag is committed; never overwrite admitted or ambiguous handoffs.
+		return false !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE campaign_id = %s AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','failed','paused_wait','rate_wait')", $this->get_recipient_tracking_table_name(), __( 'Cancelled before send began.', 'yoohw-advanced-notifications' ), current_time( 'mysql', true ), $id ) );
+	}
+
 	/** A slot is reserved only after a unique recipient claim succeeds. Crashed slots expire conservatively. */
 	private function admit_delivery( $id, $delivery, $email, $action_id ) {
 		if ( ! $this->acquire_campaign_lock( '__admit_' . $id ) ) { $this->defer_admission( $id, $delivery, $email ); return false; }
 		try {
 			if ( $this->campaign_blocked( $id ) ) {
-				$this->mark_delivery_wait( $id, $delivery, $email, 'paused_wait', __( 'Paused; use Resume to continue the original schedule.', 'yoohw-advanced-notifications' ) );
+				$control = $this->campaign_control( $id );
+				$record = $this->read_durable_option( $this->campaign_record_key( $id ) );
+				$cancelled = ! empty( $control['cancelled'] ) || ! empty( $record['cancelled'] ) || ! empty( $record['retained'] );
+				$this->mark_delivery_wait( $id, $delivery, $email, $cancelled ? 'cancelled' : 'paused_wait', $cancelled ? __( 'Cancelled before send began.', 'yoohw-advanced-notifications' ) : __( 'Paused; use Resume to continue the original schedule.', 'yoohw-advanced-notifications' ) );
 				return false;
 			}
 			if ( ! $this->acquire_campaign_lock( '__site_rate__' ) ) { $this->defer_admission( $id, $delivery, $email ); return false; }

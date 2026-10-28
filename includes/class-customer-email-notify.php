@@ -642,6 +642,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		$campaign      = $campaigns[ $campaign_id ];
 		$delivery_id   = ! empty( $campaign['delivery_id'] ) ? sanitize_text_field( $campaign['delivery_id'] ) : $campaign_id;
 		$recipient_count = isset( $campaign['recipient_count'] ) ? absint( $campaign['recipient_count'] ) : 0;
+		$control = $this->campaign_control( $campaign_id );
+		if ( ! empty( $campaign['cancelled'] ) || ! empty( $control['cancelled'] ) ) { $campaign['cancelled'] = true; $this->cancel_unstarted_recipients( $campaign_id ); }
 		$this->recover_campaign_recipients( $campaign );
 		$tracking_counts = $this->get_recipient_tracking_counts( $campaign_id, $delivery_id );
 		$action_counts = $this->get_campaign_action_status_counts( $campaign_id );
