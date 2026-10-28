@@ -49,3 +49,5 @@ chmod +x "$test_root/wp"
 python3 tests/reliability.py --wp-command "$test_root/wp" --output "$evidence_root/reliability" | tee "$evidence_root/reliability.log"
 
 python3 tests/operator-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/operator-concurrency" | tee "$evidence_root/operator-concurrency.log"
+
+python3 tests/privacy-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/privacy-concurrency" | tee "$evidence_root/privacy-concurrency.log"

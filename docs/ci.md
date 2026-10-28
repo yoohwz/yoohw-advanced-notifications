@@ -23,3 +23,5 @@ find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l
 ```
 
 `bin/run-wp-regression.sh` provisions a disposable CI site; do not point it at a store database. Merge, release, deployment, rollback, and repository branch-protection changes remain with the maintainer.
+
+The regression runner also executes `tests/privacy-concurrency.py` against its disposable database. This suite uses independent WordPress processes and barriers around personal-data publication, erasure, preparation and worker completion. Its `results.json` records the tested revision, dirty state and individual assertions; the corresponding worker logs and intercepted transport records are uploaded with the existing regression evidence.
