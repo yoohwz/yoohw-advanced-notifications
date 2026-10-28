@@ -282,6 +282,9 @@ try:
     run('reset')
     if not args.review_only:
         base_regressions()
+        # The schema-2 fixture drops counters across old rows. Do not let an admin
+        # render recover that old test work while a new fault barrier is armed.
+        run('reset')
     review_regressions()
 finally:
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
