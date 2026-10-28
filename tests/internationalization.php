@@ -25,6 +25,7 @@ $mo = new MO();
 $mo->set_headers( [ 'Content-Type' => 'text/plain; charset=UTF-8', 'Language' => 'fr_FR', 'Plural-Forms' => 'nplurals=2; plural=(n > 1);' ] );
 $translations = [
 	'Email campaigns' => 'Campagnes e-mail',
+	'Subscription status' => 'Statut d’abonnement',
 	'Manual email list' => 'Liste d’adresses e-mail',
 	'Recipient source' => 'Source des destinataires',
 	'Email subject' => 'Objet de l’e-mail',
@@ -71,6 +72,7 @@ try {
 	ob_start();
 	$notify->render_page();
 	$html = ob_get_clean();
+	$checks['audience_filter_translation_without_woocommerce'] = false !== strpos( $html, 'Statut d’abonnement' );
 	$checks['translated_form_renders'] = false !== strpos( $html, 'Campagnes e-mail' ) && false !== strpos( $html, 'Source des destinataires' );
 	$notify->enqueue_scripts( 'woocommerce_page_yoohw-advanced-notifications' );
 	$scripts = implode( "\n", (array) wp_scripts()->get_data( 'yoohw-advanced-notifications-admin', 'before' ) );

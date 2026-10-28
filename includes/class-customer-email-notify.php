@@ -5,9 +5,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/trait-campaign-reliability.php';
+require_once __DIR__ . '/trait-campaign-controls.php';
+require_once __DIR__ . '/trait-campaign-authoring.php';
+require_once __DIR__ . '/trait-campaign-audiences.php';
+require_once __DIR__ . '/trait-campaign-privacy.php';
 
 class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Reliability;
+	use YOOHW_AN_Campaign_Controls;
+	use YOOHW_AN_Campaign_Authoring;
+	use YOOHW_AN_Campaign_Audiences;
+	use YOOHW_AN_Campaign_Privacy;
 
 	const ACTION_SEND_SINGLE_EMAIL = 'yoohw_an_send_single_email';
 	const ACTION_UNSUBSCRIBE       = 'yoohw_an_unsubscribe';
@@ -53,6 +61,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	private $recipient_tracking_table_ready = null;
 
 	public function __construct() {
+		$this->register_operator_features();
 		// Register after WooCommerce sorts Marketing at priority 99 to preserve our position.
 		add_action( 'admin_menu', [ $this, 'add_submenu' ], 100 );
 		add_action( 'admin_post_yoohw_an_send_product_customer_email', [ $this, 'handle_send_email' ] );
@@ -133,6 +142,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	public function deactivate() {
 		$this->recovery_enabled = false;
+		$this->block_campaigns_on_deactivation();
 		wp_unschedule_hook( self::ACTION_RECONCILE_CAMPAIGNS );
 		wp_unschedule_hook( self::ACTION_SEND_SINGLE_EMAIL );
 
@@ -146,7 +156,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$table = $this->get_recipient_tracking_table_name();
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
 			$wpdb->query( $wpdb->prepare(
-				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled', 'queue_failed', 'schedule_failed')",
+				"UPDATE %i SET status = 'cancelled', last_error = %s, updated_at = %s WHERE status IN ('dispatch_pending', 'queued', 'scheduled', 'queue_failed', 'schedule_failed', 'paused_wait', 'rate_wait')",
 				$table,
 				__( 'Plugin deactivated before delivery.', 'yoohw-advanced-notifications' ),
 				current_time( 'mysql', true )
@@ -174,8 +184,9 @@ class YOOHW_AN_Customer_Email_Notify {
 			}
 
 			$status = isset( $campaign['status'] ) ? sanitize_key( $campaign['status'] ) : '';
+			if ( ! empty( $campaign['retained'] ) ) { continue; }
 
-			if ( ! in_array( $status, [ 'preparing', 'needs_attention', 'dispatching', 'queue_failed', 'schedule_failed', 'queueing', 'queued', 'scheduling', 'scheduled', 'processing', 'completed_with_errors' ], true ) ) {
+			if ( ! in_array( $status, [ 'cancelled', 'paused', 'rate_wait', 'preparing', 'needs_attention', 'dispatching', 'queue_failed', 'schedule_failed', 'queueing', 'queued', 'scheduling', 'scheduled', 'processing', 'completed_with_errors' ], true ) ) {
 				continue;
 			}
 
@@ -205,12 +216,17 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function track_recipient_status( $campaign_id, $email, $status, $action_id = 0, $message = '' ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return false; }
+		try {
+		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $email ) ) ) ) { return true; }
 		$campaign_id = sanitize_text_field( $campaign_id );
 		$email       = strtolower( sanitize_email( $email ) );
 		$status      = sanitize_key( $status );
 
 		$trackable_statuses = [
 			'dispatch_pending',
+			'paused_wait',
+			'rate_wait',
 			'queued',
 			'scheduled',
 			'processing',
@@ -246,7 +262,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$table_name = $this->get_recipient_tracking_table_name();
 		$now        = current_time( 'mysql', true );
 		$email_hash = hash( 'sha256', $email );
-		$message    = sanitize_text_field( $message );
+		$message    = $this->scrub_erased_references( sanitize_text_field( $message ) );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom delivery state must be read/written directly so concurrent workers and reconciliation see current status.
 		return false !== $wpdb->query( $wpdb->prepare(
@@ -274,6 +290,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$now,
 			$now
 		) );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function get_recipient_tracking_counts( $campaign_id, $delivery_id ) {
@@ -345,6 +362,8 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function prepare_campaign_recipients_for_dispatch( $payload, $recipients, $reference_time = null ) {
+		if ( ! $this->acquire_campaign_lock( '__privacy__' ) ) { return new WP_Error( 'privacy_busy', __( 'Privacy cleanup is busy. Campaign preparation will resume.', 'yoohw-advanced-notifications' ) ); }
+		try {
 		$payload      = is_array( $payload ) ? $payload : [];
 		$campaign_id = isset( $payload['campaign_id'] ) ? sanitize_text_field( $payload['campaign_id'] ) : '';
 		$delivery_id = ! empty( $payload['delivery_id'] ) ? sanitize_text_field( $payload['delivery_id'] ) : $campaign_id;
@@ -367,6 +386,12 @@ class YOOHW_AN_Customer_Email_Notify {
 		$invalid    = 0;
 
 		foreach ( $recipients as $recipient ) {
+			$confirmed_due = $recipient['confirmed_due'] ?? 0;
+			$erased_hash = ! empty( $recipient['erased'] ) ? ( $recipient['email_hash'] ?? '' ) : '';
+			if ( $erased_hash && preg_match( '/^[a-f0-9]{64}$/', $erased_hash ) && $this->read_durable_option( 'yoohw_an_erased_' . $erased_hash ) ) {
+				$rows[] = [ 'campaign_id' => $campaign_id, 'delivery_id' => $delivery_id, 'email_hash' => $erased_hash, 'email' => '', 'recipient_name' => '', 'country' => '', 'state' => '', 'city' => '', 'status' => 'cancelled', 'scheduled_at_gmt' => $confirmed_due ? gmdate( 'Y-m-d H:i:s', $confirmed_due ) : $now, 'last_error' => '' ];
+				continue;
+			}
 			$recipient = $this->sanitize_recipient_context( $recipient );
 			$email     = isset( $recipient['email'] ) ? strtolower( sanitize_email( $recipient['email'] ) ) : '';
 
@@ -374,6 +399,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				continue;
 			}
 
+			$erased = (bool) $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) );
 			$status           = 'dispatch_pending';
 			$scheduled_at_gmt = $now;
 			$last_error       = '';
@@ -391,20 +417,24 @@ class YOOHW_AN_Customer_Email_Notify {
 				}
 			}
 
+			if ( $confirmed_due ) { $scheduled_at_gmt = gmdate( 'Y-m-d H:i:s', $confirmed_due ); $status = 'dispatch_pending'; $last_error = ''; }
 			$rows[] = [
 				'campaign_id'     => $campaign_id,
 				'delivery_id'     => $delivery_id,
 				'email_hash'      => hash( 'sha256', $email ),
-				'email'           => $email,
+				'email'           => $erased ? '' : $email,
 				'recipient_name'  => isset( $recipient['name'] ) ? sanitize_text_field( $recipient['name'] ) : '',
 				'country'         => isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '',
 				'state'           => isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '',
 				'city'            => isset( $recipient['city'] ) ? $this->normalize_location_part( $recipient['city'] ) : '',
-				'status'          => $status,
+				'status'          => $erased ? 'cancelled' : $status,
 				'scheduled_at_gmt' => $scheduled_at_gmt,
 				'last_error'      => sanitize_text_field( $last_error ),
 			];
 		}
+
+		foreach ( $rows as &$row ) { if ( 'cancelled' === $row['status'] ) { foreach ( [ 'recipient_name', 'country', 'state', 'city', 'last_error' ] as $field ) { $row[ $field ] = ''; } } }
+		unset( $row );
 
 		foreach ( array_chunk( $rows, self::RECIPIENT_INSERT_BATCH_SIZE ) as $chunk ) {
 			$placeholders = [];
@@ -434,8 +464,8 @@ class YOOHW_AN_Customer_Email_Notify {
 				(campaign_id,delivery_id,email_hash,email,recipient_name,country,state,city,status,action_id,scheduled_at_gmt,last_error,created_at,updated_at)
 				VALUES " . implode( ',', $placeholders ) . "
 				ON DUPLICATE KEY UPDATE
-					email = IF(email = '', VALUES(email), email),
-					recipient_name = IF(recipient_name = '', VALUES(recipient_name), recipient_name)";
+					email = IF(email = '' AND claim_token = '' AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait') AND VALUES(status) <> 'cancelled', VALUES(email), email),
+					recipient_name = IF(recipient_name = '' AND claim_token = '' AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait') AND VALUES(status) <> 'cancelled', VALUES(recipient_name), recipient_name)";
 
 			// The SQL consists only of the fixed statement and repeated literal placeholders above. All values, including the table identifier, are prepared.
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Prepared bulk placeholders in the custom delivery table; uncached writes keep worker status current.
@@ -453,23 +483,21 @@ class YOOHW_AN_Customer_Email_Notify {
 			'dispatch_pending' => isset( $counts['dispatch_pending'] ) ? absint( $counts['dispatch_pending'] ) : 0,
 			'schedule_failed'  => isset( $counts['schedule_failed'] ) ? absint( $counts['schedule_failed'] ) : $invalid,
 		];
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function enqueue_campaign_dispatch( $campaign_id ) {
 		$campaign_id = sanitize_text_field( $campaign_id );
 
-		if ( empty( $campaign_id ) || ! function_exists( 'as_enqueue_async_action' ) ) {
+		if ( empty( $campaign_id ) || $this->campaign_blocked( $campaign_id ) || ! function_exists( 'as_enqueue_async_action' ) ) {
 			return 0;
 		}
 
-		return absint(
-			as_enqueue_async_action(
-				self::ACTION_DISPATCH_CAMPAIGN,
-				[ $campaign_id ],
-				self::ACTION_GROUP . '-dispatch',
-				false
-			)
-		);
+		$control = $this->campaign_control( $campaign_id );
+		$due = max( time(), (int) ( $control['rate_resume_at'] ?? 0 ) );
+		if ( as_get_scheduled_actions( [ 'hook' => self::ACTION_DISPATCH_CAMPAIGN, 'args' => [ $campaign_id ], 'group' => self::ACTION_GROUP . '-dispatch', 'status' => 'pending', 'per_page' => 1 ], 'ids' ) ) { return 1; }
+		if ( $due <= time() ) { return absint( as_enqueue_async_action( self::ACTION_DISPATCH_CAMPAIGN, [ $campaign_id ], self::ACTION_GROUP . '-dispatch', false ) ); }
+		return absint( as_schedule_single_action( $due, self::ACTION_DISPATCH_CAMPAIGN, [ $campaign_id ], self::ACTION_GROUP . '-dispatch', false ) );
 	}
 
 	private function update_tracking_row_state( $campaign_id, $delivery_id, $email_hash, $status, $action_id = 0, $message = '' ) {
@@ -477,18 +505,20 @@ class YOOHW_AN_Customer_Email_Notify {
 		// A late scheduler result must never overwrite a worker or a final outcome.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare status and empty claim token within the UPDATE so scheduler completion cannot regress a concurrent handoff.
 		return false !== $wpdb->query( $wpdb->prepare(
-			"UPDATE %i SET status = %s, action_id = %d, last_error = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed') AND claim_token = ''",
+			"UPDATE %i SET status = %s, action_id = %d, last_error = %s, updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','queue_failed','schedule_failed','paused_wait','rate_wait') AND claim_token = ''",
 			$this->get_recipient_tracking_table_name(), $status, $action_id, $message, current_time( 'mysql', true ), $campaign_id, $delivery_id, $email_hash
 		) );
 	}
 
 	public function dispatch_campaign_batch( $campaign_id ) {
 		$campaign_id = sanitize_text_field( $campaign_id );
-		if ( empty( $campaign_id ) || ! $this->acquire_campaign_lock( $campaign_id ) ) {
+		if ( empty( $campaign_id ) || $this->campaign_blocked( $campaign_id ) || ! $this->acquire_campaign_lock( $campaign_id ) ) {
 			return;
 		}
 
 		try {
+			$control = $this->campaign_control( $campaign_id );
+			if ( ( $control['rate_resume_at'] ?? 0 ) > time() ) { $this->enqueue_campaign_dispatch( $campaign_id ); return; }
 			$manifest = $this->read_durable_option( $this->campaign_manifest_key( $campaign_id ) );
 			if ( is_array( $manifest ) && ! $this->resume_campaign_preparation( $campaign_id, $manifest ) ) {
 				return;
@@ -527,7 +557,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				$wpdb->prepare(
 					"SELECT email_hash,email,recipient_name,country,state,city,scheduled_at_gmt
 					FROM %i
-					WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3
+					WHERE campaign_id = %s AND delivery_id = %s AND (status = 'dispatch_pending' AND attempts < 3 OR status IN ('paused_wait','rate_wait'))
 					ORDER BY id ASC
 					LIMIT %d",
 					$table_name,
@@ -548,7 +578,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				];
 				// Reserve the attempt before job storage: a process can stop between those writes.
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Increment and enforce the retry bound atomically against current recipient state before storing a job.
-				if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + 1 WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status = 'dispatch_pending' AND attempts < 3", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) ) ) {
+				if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET attempts = attempts + IF(status = 'dispatch_pending',1,0), status = 'dispatch_pending' WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND (status = 'dispatch_pending' AND attempts < 3 OR status IN ('paused_wait','rate_wait'))", $table_name, $campaign_id, $delivery_id, $row['email_hash'] ) ) ) {
 					continue;
 				}
 				$args = $this->build_email_action_args( $payload, $recipient, $payload_reference );
@@ -628,6 +658,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		$campaign      = $campaigns[ $campaign_id ];
 		$delivery_id   = ! empty( $campaign['delivery_id'] ) ? sanitize_text_field( $campaign['delivery_id'] ) : $campaign_id;
 		$recipient_count = isset( $campaign['recipient_count'] ) ? absint( $campaign['recipient_count'] ) : 0;
+		$control = $this->campaign_control( $campaign_id );
+		if ( ! empty( $campaign['cancelled'] ) || ! empty( $control['cancelled'] ) ) { $campaign['cancelled'] = true; $this->cancel_unstarted_recipients( $campaign_id ); }
 		$this->recover_campaign_recipients( $campaign );
 		$tracking_counts = $this->get_recipient_tracking_counts( $campaign_id, $delivery_id );
 		$action_counts = $this->get_campaign_action_status_counts( $campaign_id );
@@ -666,10 +698,10 @@ class YOOHW_AN_Customer_Email_Notify {
 		) );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Count current eligible recipients before creating another dispatcher; stale counts can schedule exhausted or already claimed work.
 		$eligible_dispatch = (int) $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND delivery_id = %s AND status = 'dispatch_pending' AND attempts < 3",
+			"SELECT COUNT(*) FROM %i WHERE campaign_id = %s AND delivery_id = %s AND (status = 'dispatch_pending' AND attempts < 3 OR status IN ('paused_wait','rate_wait'))",
 			$this->get_recipient_tracking_table_name(), $campaign_id, $delivery_id
 		) );
-		$pending_recipients = ( $tracking_counts['processing'] ?? 0 ) + ( $tracking_counts['queued'] ?? 0 ) + ( $tracking_counts['scheduled'] ?? 0 );
+		$pending_recipients = ( $tracking_counts['paused_wait'] ?? 0 ) + ( $tracking_counts['rate_wait'] ?? 0 ) + ( $tracking_counts['processing'] ?? 0 ) + ( $tracking_counts['queued'] ?? 0 ) + ( $tracking_counts['scheduled'] ?? 0 );
 		$unresolved = max( 0, $recipient_count - $tracked_total );
 		$campaign['recovery_message'] = '';
 		if ( ! empty( $campaign['dispatch_error'] ) ) {
@@ -705,6 +737,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			$campaign['recovery_message'] = __( 'Review recipient reasons below. Queue failures retry at least 5 minutes apart, up to 3 queue attempts. Correct configuration failures before recovery. Cancelled recipients require a new campaign.', 'yoohw-advanced-notifications' );
 		}
 
+		$control = $this->campaign_control( $campaign_id );
+		if ( ! empty( $campaign['cancelled'] ) || ! empty( $control['cancelled'] ) ) { $status = 'cancelled'; }
+		elseif ( ! empty( $control['paused'] ) ) { $status = 'paused'; $campaign['recovery_message'] = __( 'Paused. Resume to continue remaining recipients.', 'yoohw-advanced-notifications' ); }
+		elseif ( ! empty( $tracking_counts['rate_wait'] ) ) { $status = 'rate_wait'; }
+		if ( in_array( $status, [ 'completed', 'completed_with_errors', 'cancelled' ], true ) && ! $pending_recipients && empty( $campaign['completed_at'] ) ) { $campaign['completed_at'] = time(); }
 		$campaign['recipient_count']         = $recipient_count;
 		$campaign['status']                  = $status;
 		$campaign['tracking_counts']         = $tracking_counts;
@@ -744,6 +781,15 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'campaign'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed.
 
+		if ( 'library' === $active_tab ) {
+			$this->render_library_page();
+			return;
+		}
+		if ( 'subscribers' === $active_tab ) {
+			$this->render_subscribers_page();
+			return;
+		}
+
 		if ( 'settings' === $active_tab ) {
 			$this->render_settings_page();
 			return;
@@ -756,6 +802,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$edit_token      = isset( $_GET['edit_token'] ) ? sanitize_key( wp_unslash( $_GET['edit_token'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed.
 		$restore_payload = $this->get_restore_payload( $edit_token );
+		$restore_payload = $this->restore_authoring_payload( $restore_payload );
 		$restore_failed  = ! empty( $edit_token ) && empty( $restore_payload );
 
 		$recipient_sources = $this->get_recipient_sources();
@@ -771,7 +818,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			? array_values( array_unique( array_filter( array_map( 'absint', (array) $restore_payload['product_ids'] ) ) ) )
 			: [];
 		$selected_user_roles = isset( $restore_payload['user_roles'] ) ? (array) $restore_payload['user_roles'] : [];
-		$selected_manual_emails = isset( $restore_payload['manual_emails'] ) ? implode( "\n", (array) $restore_payload['manual_emails'] ) : '';
+		$selected_manual_emails = isset( $restore_payload['manual_emails_raw'] ) ? $restore_payload['manual_emails_raw'] : ( isset( $restore_payload['manual_emails'] ) ? implode( "\n", (array) $restore_payload['manual_emails'] ) : '' );
 
 		$selected_subject = isset( $restore_payload['subject'] ) ? sanitize_text_field( $restore_payload['subject'] ) : '';
 		$selected_heading = isset( $restore_payload['heading'] ) ? sanitize_text_field( $restore_payload['heading'] ) : '';
@@ -787,7 +834,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			? sanitize_textarea_field( $restore_payload['exclude_emails_raw'] )
 			: ( isset( $selected_exclusions['emails'] ) ? implode( "\n", array_filter( array_map( 'sanitize_email', (array) $selected_exclusions['emails'] ) ) ) : '' );
 		$selected_schedule_mode = isset( $restore_payload['schedule_mode'] ) ? sanitize_key( $restore_payload['schedule_mode'] ) : 'now';
-		$selected_schedule_mode = in_array( $selected_schedule_mode, [ 'now', 'scheduled' ], true ) ? $selected_schedule_mode : 'now';
+		$selected_schedule_mode = in_array( $selected_schedule_mode, [ 'now', 'scheduled', 'store', 'local' ], true ) ? $selected_schedule_mode : 'now';
 		$selected_scheduled_at  = ! empty( $restore_payload['scheduled_at_input'] )
 			? sanitize_text_field( $restore_payload['scheduled_at_input'] )
 			: $this->get_default_schedule_datetime_value();
@@ -797,7 +844,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			: get_option( 'admin_email' );
 		?>
 
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
 			<?php $this->render_page_tabs( 'campaign' ); ?>
@@ -816,7 +863,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 			<?php if ( ! empty( $restore_payload ) ) : ?>
 				<div class="notice notice-info is-dismissible">
-					<p><?php esc_html_e( 'Draft restored from the preview. You can edit it and preview recipients again.', 'yoohw-advanced-notifications' ); ?></p>
+					<p><?php esc_html_e( 'Draft restored. You can edit it and preview recipients again.', 'yoohw-advanced-notifications' ); ?></p>
 				</div>
 			<?php elseif ( $restore_failed ) : ?>
 				<div class="notice notice-warning is-dismissible">
@@ -950,9 +997,15 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				<?php wp_nonce_field( 'yoohw_an_send_product_customer_email_action', 'yoohw_an_send_product_customer_email_nonce' ); ?>
 
-				<div class="yoohw-advanced-notifications-campaign-grid">
-					<div class="yoohw-advanced-notifications-campaign-main">
-						<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
+				<?php $this->render_authoring_fields( $restore_payload ); ?>
+				<nav class="an-compose-steps" aria-label="<?php esc_attr_e( 'Compose steps', 'yoohw-advanced-notifications' ); ?>">
+					<?php foreach ( [ 'audience' => __( '1. Audience', 'yoohw-advanced-notifications' ), 'content' => __( '2. Content', 'yoohw-advanced-notifications' ), 'schedule' => __( '3. Schedule', 'yoohw-advanced-notifications' ), 'review' => __( '4. Review', 'yoohw-advanced-notifications' ) ] as $step => $label ) : ?>
+						<a href="#an-step-<?php echo esc_attr( $step ); ?>" data-an-step="<?php echo esc_attr( $step ); ?>"><?php echo esc_html( $label ); ?></a>
+					<?php endforeach; ?>
+				</nav>
+				<div id="an-step-audience" class="an-compose-step" data-an-panel="audience">
+					<?php $this->render_saved_audience_picker( $restore_payload ); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
 						<div class="yoohw-advanced-notifications-panel-header">
 							<span class="yoohw-advanced-notifications-step">1</span>
 							<div>
@@ -961,6 +1014,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</div>
 
+						<p class="an-incompatible-help notice notice-warning inline" hidden><?php esc_html_e( 'Some selections do not apply to this recipient source. Clear the highlighted selections explicitly or choose a compatible source before previewing.', 'yoohw-advanced-notifications' ); ?></p>
 						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
 							<div class="yoohw-advanced-notifications-field">
 								<label for="recipient_source"><?php esc_html_e( 'Recipient source', 'yoohw-advanced-notifications' ); ?></label>
@@ -978,16 +1032,16 @@ class YOOHW_AN_Customer_Email_Notify {
 								<select name="user_roles[]" id="user_roles" class="wc-enhanced-select" multiple="multiple" style="width: 100%;" data-placeholder="<?php esc_attr_e( 'All roles', 'yoohw-advanced-notifications' ); ?>" data-allow_clear="true">
 									<?php foreach ( wp_roles()->get_names() as $role => $label ) : ?>
 										<option value="<?php echo esc_attr( $role ); ?>" <?php selected( in_array( $role, $selected_user_roles, true ) ); ?>><?php echo esc_html( translate_user_role( $label ) ); ?></option>
-									<?php endforeach; ?>
+									<?php endforeach; $this->render_unavailable_options( $selected_user_roles, array_keys( wp_roles()->get_names() ) ); ?>
 								</select>
 								<p><?php esc_html_e( 'Match any selected role. Leave empty for all registered users, including administrators.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
 							<div id="yoohw-advanced-notifications-manual-row" class="yoohw-advanced-notifications-field" style="grid-column: 1 / -1;">
 								<label for="manual_emails"><?php esc_html_e( 'Recipient email addresses', 'yoohw-advanced-notifications' ); ?></label>
 								<textarea name="manual_emails" id="manual_emails" rows="5" class="large-text" placeholder="one@example.com&#10;two@example.com"><?php echo esc_textarea( $selected_manual_emails ); ?></textarea>
-								<p><?php esc_html_e( 'Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Scheduled delivery uses UTC for this list.', 'yoohw-advanced-notifications' ); ?></p>
+								<p><?php esc_html_e( 'Enter email addresses separated by commas, semicolons, spaces, or line breaks. Duplicates are removed. Invalid addresses must be corrected. Recipient-local scheduling uses UTC for this list; store-time scheduling uses the store timezone.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
-							<p id="yoohw-advanced-notifications-customers-row" class="description" style="grid-column: 1 / -1;"><?php esc_html_e( 'Includes billing email addresses from processing and completed orders, including guest purchases. Each email address is included once.', 'yoohw-advanced-notifications' ); ?></p>
+							<p id="yoohw-advanced-notifications-customers-row" class="description" style="grid-column: 1 / -1;"><?php esc_html_e( 'Includes billing email addresses from matching orders, including guests (processing/completed by default). Each email address is included once.', 'yoohw-advanced-notifications' ); ?></p>
 
 							<div id="yoohw-advanced-notifications-products-row" class="yoohw-advanced-notifications-field">
 								<label for="product_ids"><?php esc_html_e( 'Products', 'yoohw-advanced-notifications' ); ?></label>
@@ -1006,47 +1060,8 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</div>
 					</section>
-
-					<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
-						<div class="yoohw-advanced-notifications-panel-header">
-							<span class="yoohw-advanced-notifications-step">2</span>
-							<div>
-								<h2><?php esc_html_e( 'Message', 'yoohw-advanced-notifications' ); ?></h2>
-								<p><?php esc_html_e( 'Compose the email shown inside the WooCommerce template.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-						</div>
-
-						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
-							<div class="yoohw-advanced-notifications-field">
-								<label for="email_subject"><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></label>
-								<input type="text" name="email_subject" id="email_subject" class="regular-text" value="<?php echo esc_attr( $selected_subject ); ?>" required>
-							</div>
-
-							<div class="yoohw-advanced-notifications-field">
-								<label for="email_heading"><?php esc_html_e( 'Email heading', 'yoohw-advanced-notifications' ); ?></label>
-								<input type="text" name="email_heading" id="email_heading" class="regular-text" value="<?php echo esc_attr( $selected_heading ); ?>" required>
-							</div>
-
-							<div class="yoohw-advanced-notifications-field yoohw-advanced-notifications-field-full">
-								<label for="email_message"><?php esc_html_e( 'Message body', 'yoohw-advanced-notifications' ); ?></label>
-								<?php
-								wp_editor(
-									$selected_message,
-									'email_message',
-									[
-										'textarea_name' => 'email_message',
-										'textarea_rows' => 10,
-										'media_buttons' => true,
-									]
-								);
-								?>
-								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Available placeholders: {customer_name}, {product_name}', 'yoohw-advanced-notifications' ); ?></p>
-								<p><?php esc_html_e( 'An unsubscribe link is added automatically to campaign emails.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-						</div>
-					</section>
-
-					<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
+					<?php $this->render_audience_fields( $restore_payload ); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
 						<details class="yoohw-advanced-notifications-details">
 							<summary>
 								<span><?php esc_html_e( 'Exclusions', 'yoohw-advanced-notifications' ); ?></span>
@@ -1102,48 +1117,51 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</details>
 					</section>
-
-					<section class="yoohw-advanced-notifications-panel">
+				</div>
+				<div id="an-step-content" class="an-compose-step" data-an-panel="content">
+					<div class="yoohw-advanced-notifications-campaign-grid"><div class="yoohw-advanced-notifications-campaign-main">
+					<?php $this->render_content_templates(); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
 						<div class="yoohw-advanced-notifications-panel-header">
-							<span class="yoohw-advanced-notifications-step">3</span>
+							<span class="yoohw-advanced-notifications-step">2</span>
 							<div>
-								<h2><?php esc_html_e( 'Delivery', 'yoohw-advanced-notifications' ); ?></h2>
-								<p><?php esc_html_e( 'Choose when the campaign should be sent.', 'yoohw-advanced-notifications' ); ?></p>
+								<h2><?php esc_html_e( 'Content', 'yoohw-advanced-notifications' ); ?></h2>
+								<p><?php esc_html_e( 'Compose the email shown inside the WooCommerce template.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
 						</div>
 
-						<div class="yoohw-advanced-notifications-choice-group">
-							<label class="yoohw-advanced-notifications-choice">
-								<input type="radio" name="schedule_mode" value="now" <?php checked( 'now', $selected_schedule_mode ); ?>>
-								<span>
-									<strong><?php esc_html_e( 'Send after confirmation', 'yoohw-advanced-notifications' ); ?></strong>
-									<small><?php esc_html_e( 'Queue emails as soon as the preview is confirmed.', 'yoohw-advanced-notifications' ); ?></small>
-								</span>
-							</label>
-							<label class="yoohw-advanced-notifications-choice">
-								<input type="radio" name="schedule_mode" value="scheduled" <?php checked( 'scheduled', $selected_schedule_mode ); ?>>
-								<span>
-									<strong><?php esc_html_e( 'Schedule for later', 'yoohw-advanced-notifications' ); ?></strong>
-									<small><?php esc_html_e( 'Use each recipient billing timezone when available.', 'yoohw-advanced-notifications' ); ?></small>
-								</span>
-							</label>
-						</div>
+						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
+							<div class="yoohw-advanced-notifications-field">
+								<label for="email_subject"><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></label>
+								<input type="text" name="email_subject" id="email_subject" class="regular-text" value="<?php echo esc_attr( $selected_subject ); ?>" required>
+							</div>
 
-						<div id="yoohw-advanced-notifications-schedule-row" class="yoohw-advanced-notifications-field yoohw-advanced-notifications-schedule-field">
-							<label for="scheduled_at"><?php esc_html_e( 'Scheduled date/time', 'yoohw-advanced-notifications' ); ?></label>
-							<input
-								type="datetime-local"
-								name="scheduled_at"
-								id="scheduled_at"
-								value="<?php echo esc_attr( $selected_scheduled_at ); ?>"
-							>
-							<p><?php esc_html_e( 'Recipients without billing location use UTC.', 'yoohw-advanced-notifications' ); ?></p>
+							<div class="yoohw-advanced-notifications-field">
+								<label for="email_heading"><?php esc_html_e( 'Email heading', 'yoohw-advanced-notifications' ); ?></label>
+								<input type="text" name="email_heading" id="email_heading" class="regular-text" value="<?php echo esc_attr( $selected_heading ); ?>" required>
+							</div>
+
+							<div class="yoohw-advanced-notifications-field yoohw-advanced-notifications-field-full">
+								<label for="email_message"><?php esc_html_e( 'Message body', 'yoohw-advanced-notifications' ); ?></label>
+								<?php
+								wp_editor(
+									$selected_message,
+									'email_message',
+									[
+										'textarea_name' => 'email_message',
+										'textarea_rows' => 10,
+										'media_buttons' => true,
+									]
+								);
+								?>
+								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Body variables: {customer_name} uses the saved recipient name, falling back to email; {product_name} is the shared campaign product label, never a personal purchase. With no product selection it uses the audience label. Subject and heading are literal.', 'yoohw-advanced-notifications' ); ?></p>
+								<p><?php esc_html_e( 'An unsubscribe link is added automatically to campaign emails.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
 						</div>
 					</section>
-
-					<section class="yoohw-advanced-notifications-panel">
+<section class="yoohw-advanced-notifications-panel">
 						<div class="yoohw-advanced-notifications-panel-header">
-							<span class="yoohw-advanced-notifications-step">4</span>
+							<span class="yoohw-advanced-notifications-step">2</span>
 							<div>
 								<h2><?php esc_html_e( 'Test', 'yoohw-advanced-notifications' ); ?></h2>
 								<p><?php esc_html_e( 'Send a single email without building the campaign queue.', 'yoohw-advanced-notifications' ); ?></p>
@@ -1168,10 +1186,9 @@ class YOOHW_AN_Customer_Email_Notify {
 								value="<?php echo esc_attr( $selected_test_email ); ?>"
 							>
 							</div>
-						</section>
-					</div>
-
-					<aside class="yoohw-advanced-notifications-preview-panel" aria-label="<?php esc_attr_e( 'Email preview', 'yoohw-advanced-notifications' ); ?>">
+						<p><button class="button an-test-submit" type="submit" hidden><?php esc_html_e( 'Send Test Email', 'yoohw-advanced-notifications' ); ?></button></p>
+</section>
+</div><aside class="yoohw-advanced-notifications-preview-panel" aria-label="<?php esc_attr_e( 'Email preview', 'yoohw-advanced-notifications' ); ?>">
 						<div class="yoohw-advanced-notifications-preview-header">
 							<div>
 								<h2><?php esc_html_e( 'Email preview', 'yoohw-advanced-notifications' ); ?></h2>
@@ -1180,7 +1197,8 @@ class YOOHW_AN_Customer_Email_Notify {
 							<span><?php esc_html_e( 'Live', 'yoohw-advanced-notifications' ); ?></span>
 						</div>
 
-						<div class="yoohw-advanced-notifications-preview-subject">
+						<?php $this->render_preview_device_controls(); ?>
+<div class="yoohw-advanced-notifications-preview-subject">
 							<strong><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></strong>
 							<span id="yoohw-advanced-notifications-preview-subject"><?php esc_html_e( 'Email subject', 'yoohw-advanced-notifications' ); ?></span>
 						</div>
@@ -1192,9 +1210,56 @@ class YOOHW_AN_Customer_Email_Notify {
 							title="<?php esc_attr_e( 'WooCommerce email preview', 'yoohw-advanced-notifications' ); ?>">
 						</iframe>
 					</aside>
-				</div>
+</div></div>
+				<div id="an-step-schedule" class="an-compose-step" data-an-panel="schedule">
+<section class="yoohw-advanced-notifications-panel">
+						<div class="yoohw-advanced-notifications-panel-header">
+							<span class="yoohw-advanced-notifications-step">3</span>
+							<div>
+								<h2><?php esc_html_e( 'Schedule', 'yoohw-advanced-notifications' ); ?></h2>
+								<p><?php esc_html_e( 'Choose when the campaign should be sent.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
+						</div>
 
-				<div class="yoohw-advanced-notifications-actions">
+						<div class="yoohw-advanced-notifications-choice-group">
+							<label class="yoohw-advanced-notifications-choice">
+								<input type="radio" name="schedule_mode" value="now" <?php checked( 'now', $selected_schedule_mode ); ?>>
+								<span>
+									<strong><?php esc_html_e( 'Send after confirmation', 'yoohw-advanced-notifications' ); ?></strong>
+									<small><?php esc_html_e( 'Queue emails as soon as the preview is confirmed.', 'yoohw-advanced-notifications' ); ?></small>
+								</span>
+							</label>
+							<?php if ( 'scheduled' === $selected_schedule_mode ) : ?><label class="yoohw-advanced-notifications-choice">
+								<input type="radio" name="schedule_mode" value="scheduled" <?php disabled( 'scheduled' !== $selected_schedule_mode ); ?> <?php checked( 'scheduled', $selected_schedule_mode ); ?>>
+								<span>
+									<strong><?php esc_html_e( 'Schedule for later', 'yoohw-advanced-notifications' ); ?></strong>
+									<small><?php esc_html_e( 'Legacy schedule restored. Choose an explicit store or local mode for this new campaign.', 'yoohw-advanced-notifications' ); ?></small>
+								</span>
+							</label><?php endif; ?>
+						</div>
+
+						<label class="yoohw-advanced-notifications-choice"><input type="radio" name="schedule_mode" value="store" <?php checked( 'store', $selected_schedule_mode ); ?>><span><strong><?php echo esc_html__( 'One time in store timezone:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( wp_timezone_string() ); ?></strong><small><?php esc_html_e( 'All recipients share one UTC due time.', 'yoohw-advanced-notifications' ); ?></small></span></label>
+						<label class="yoohw-advanced-notifications-choice"><input type="radio" name="schedule_mode" value="local" <?php checked( 'local', $selected_schedule_mode ); ?>><span><strong><?php esc_html_e( 'Same local time per recipient (location estimate; UTC fallback)', 'yoohw-advanced-notifications' ); ?></strong><small><?php esc_html_e( 'Only unambiguous billing countries use a location estimate. Other countries, missing data and manual lists use UTC.', 'yoohw-advanced-notifications' ); ?></small></span></label>
+						<div id="yoohw-advanced-notifications-schedule-row" class="yoohw-advanced-notifications-field yoohw-advanced-notifications-schedule-field">
+							<label for="scheduled_at"><?php esc_html_e( 'Scheduled date/time', 'yoohw-advanced-notifications' ); ?></label>
+							<input
+								type="datetime-local"
+								name="scheduled_at"
+								id="scheduled_at"
+								value="<?php echo esc_attr( $selected_scheduled_at ); ?>"
+							>
+							<p><?php esc_html_e( 'Store mode uses the displayed store timezone. Local mode uses a billing-location estimate only when unambiguous, otherwise UTC. Past, nonexistent or repeated local times are rejected; choose another time. No automatic next-day rollover.', 'yoohw-advanced-notifications' ); ?></p>
+						</div>
+					</section>
+</div>
+				<div id="an-step-review" class="an-compose-step" data-an-panel="review">
+					<section class="yoohw-advanced-notifications-panel">
+						<h2><?php esc_html_e( 'Review before confirmation', 'yoohw-advanced-notifications' ); ?></h2>
+						<p><?php esc_html_e( 'Preview Recipients opens the saved recipient preview with selected and excluded counts, reasons, personalized samples and confirmed due times. No audience estimate is calculated while you edit.', 'yoohw-advanced-notifications' ); ?></p>
+						<p><?php esc_html_e( 'Review that preview, then confirm there. Changes require another preview. Emails already handed to the mail system cannot be recalled; inbox delivery is not verified.', 'yoohw-advanced-notifications' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Test mode sends only to the test address. Turn it off in Content to preview a campaign audience.', 'yoohw-advanced-notifications' ); ?></p>
+					</section>
+<div class="yoohw-advanced-notifications-actions">
 					<span
 						id="yoohw-advanced-notifications-action-help"
 						data-campaign-text="<?php esc_attr_e( 'Next step: preview recipients and confirm before sending.', 'yoohw-advanced-notifications' ); ?>"
@@ -1215,6 +1280,11 @@ class YOOHW_AN_Customer_Email_Notify {
 					);
 					?>
 				</div>
+</div>
+				<div class="an-step-controls" hidden>
+					<button type="button" class="button" data-an-previous><?php esc_html_e( 'Back', 'yoohw-advanced-notifications' ); ?></button>
+					<button type="button" class="button button-primary" data-an-next><?php esc_html_e( 'Continue', 'yoohw-advanced-notifications' ); ?></button>
+				</div>
 			</form>
 		</div>
 
@@ -1223,24 +1293,18 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function render_page_tabs( $active_tab ) {
 		$tabs = [
-			'campaign' => [
-				'label' => __( 'Campaign', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url(),
-			],
-			'campaigns' => [
-				'label' => __( 'Campaigns & Logs', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url( [ 'tab' => 'campaigns' ] ),
-			],
-			'settings' => [
-				'label' => __( 'Settings', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url( [ 'tab' => 'settings' ] ),
-			],
+			'campaigns' => [ 'label' => __( 'Campaigns', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'campaigns' ] ) ],
+			'campaign' => [ 'label' => __( 'Compose', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url() ],
+			'library' => [ 'label' => __( 'Library', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'library' ] ) ],
+			'subscribers' => [ 'label' => __( 'Subscribers', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'subscribers' ] ) ],
+			'settings' => [ 'label' => __( 'Settings', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'settings' ] ) ],
 		];
 		?>
 		<nav class="nav-tab-wrapper" style="margin-bottom: 16px;">
 			<?php foreach ( $tabs as $tab_key => $tab ) : ?>
 				<a
 					class="nav-tab <?php echo $active_tab === $tab_key ? 'nav-tab-active' : ''; ?>"
+					<?php if ( $active_tab === $tab_key ) { echo 'aria-current="page"'; } ?>
 					href="<?php echo esc_url( $tab['url'] ); ?>">
 					<?php echo esc_html( $tab['label'] ); ?>
 				</a>
@@ -1288,7 +1352,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			],
 		];
 		?>
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
 			<?php $this->render_page_tabs( 'campaigns' ); ?>
@@ -1469,6 +1533,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				<?php if ( ! empty( $selected_campaign ) ) : ?>
 					<div class="yoohw-advanced-notifications-campaign-detail">
+						<?php $this->render_campaign_controls( $selected_campaign ); $this->render_duplicate_form( $selected_campaign_id ); ?>
 						<h2><?php esc_html_e( 'Campaign details', 'yoohw-advanced-notifications' ); ?></h2>
 						<table class="wp-list-table widefat striped table-view-list yoohw-advanced-notifications-detail-table">
 							<tbody>
@@ -1770,7 +1835,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function render_settings_page() {
 		?>
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
 			<?php $this->render_page_tabs( 'settings' ); ?>
@@ -1781,20 +1846,15 @@ class YOOHW_AN_Customer_Email_Notify {
 				</div>
 			<?php endif; ?>
 
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<form class="yoohw-advanced-notifications-panel" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="yoohw_an_save_customer_email_notify_settings">
 
 				<?php wp_nonce_field( 'yoohw_an_save_customer_email_notify_settings_action', 'yoohw_an_save_customer_email_notify_settings_nonce' ); ?>
 
 				<h2><?php esc_html_e( 'Sender', 'yoohw-advanced-notifications' ); ?></h2>
 
-				<table class="form-table">
-					<tr>
-						<th>
-							<label for="from_email"><?php esc_html_e( 'From email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+				<div class="an-form-grid"><div class="an-field"><label for="from_email"><?php esc_html_e( 'From email', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="email"
 								name="from_email"
 								id="from_email"
@@ -1804,32 +1864,18 @@ class YOOHW_AN_Customer_Email_Notify {
 							>
 							<p class="description">
 								<?php esc_html_e( 'Used as the sender email for every campaign.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="from_name"><?php esc_html_e( 'From name', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+							</p></div>
+<div class="an-field"><label for="from_name"><?php esc_html_e( 'From name', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="text"
 								name="from_name"
 								id="from_name"
 								class="regular-text"
 								value="<?php echo esc_attr( $this->get_sender_name() ); ?>"
 								required
-							>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="reply_to_email"><?php esc_html_e( 'Reply-To email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
+							></div>
+<div class="an-field"><label for="reply_to_email"><?php esc_html_e( 'Reply-To email', 'yoohw-advanced-notifications' ); ?></label>
+<input
 								type="email"
 								name="reply_to_email"
 								id="reply_to_email"
@@ -1839,14 +1885,20 @@ class YOOHW_AN_Customer_Email_Notify {
 							>
 							<p class="description">
 								<?php esc_html_e( 'Used when automated-reply suppression is disabled.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th><?php esc_html_e( 'Automated replies', 'yoohw-advanced-notifications' ); ?></th>
-						<td>
-							<label for="suppress_automated_replies">
+							</p></div>
+<div class="an-field"><label for="no_reply_email"><?php esc_html_e( 'No-reply email', 'yoohw-advanced-notifications' ); ?></label>
+<input
+								type="email"
+								name="no_reply_email"
+								id="no_reply_email"
+								class="regular-text"
+								value="<?php echo esc_attr( $this->get_no_reply_email() ); ?>"
+							>
+							<p class="description">
+								<?php esc_html_e( 'Used as Reply-To while suppression is enabled, so non-compliant automatic responders do not reach the support inbox.', 'yoohw-advanced-notifications' ); ?>
+							</p></div>
+<div class="an-field an-field-full"><span class="an-field-title"><?php esc_html_e( 'Automated replies', 'yoohw-advanced-notifications' ); ?></span>
+<label class="an-checkbox-label" for="suppress_automated_replies">
 								<input
 									type="checkbox"
 									name="suppress_automated_replies"
@@ -1858,31 +1910,11 @@ class YOOHW_AN_Customer_Email_Notify {
 							</label>
 							<p class="description">
 								<?php esc_html_e( 'Adds standards-based bulk/automatic message headers while preserving delivery failure notifications.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th>
-							<label for="no_reply_email"><?php esc_html_e( 'No-reply email', 'yoohw-advanced-notifications' ); ?></label>
-						</th>
-						<td>
-							<input
-								type="email"
-								name="no_reply_email"
-								id="no_reply_email"
-								class="regular-text"
-								value="<?php echo esc_attr( $this->get_no_reply_email() ); ?>"
-							>
-							<p class="description">
-								<?php esc_html_e( 'Used as Reply-To while suppression is enabled, so non-compliant automatic responders do not reach the support inbox.', 'yoohw-advanced-notifications' ); ?>
-							</p>
-						</td>
-					</tr>
-				</table>
+							</p></div></div>
 
 				<?php submit_button( __( 'Save Settings', 'yoohw-advanced-notifications' ) ); ?>
 			</form>
+			<?php $this->render_data_settings(); ?>
 		</div>
 		<?php
 	}
@@ -1892,7 +1924,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		if ( is_wp_error( $payload ) ) {
 			?>
-			<div class="wrap">
+			<div class="wrap yoohw-an-workspace">
 				<h1><?php esc_html_e( 'Preview email campaign', 'yoohw-advanced-notifications' ); ?></h1>
 				<div class="notice notice-error">
 					<p><?php echo esc_html( $payload->get_error_message() ); ?></p>
@@ -1927,8 +1959,10 @@ class YOOHW_AN_Customer_Email_Notify {
 		$is_scheduled = $this->is_payload_scheduled( $payload );
 		?>
 
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Preview email campaign', 'yoohw-advanced-notifications' ); ?></h1>
+
+			<?php $this->render_page_tabs( 'campaign' ); ?>
 
 			<table class="widefat striped" style="max-width: 920px;">
 				<tbody>
@@ -2021,7 +2055,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							echo esc_html(
 								$is_scheduled
 									? sprintf(
-										/* translators: %s: Scheduled local date and time. */ __( 'Scheduled for %s in each recipient billing country timezone; missing country uses UTC.', 'yoohw-advanced-notifications' ),
+										/* translators: %s: Scheduled local date and time. */ __( 'Scheduled for %s. See the confirmed mode, timezone and UTC range below.', 'yoohw-advanced-notifications' ),
 										$this->format_schedule_input_for_display( isset( $payload['scheduled_at_input'] ) ? $payload['scheduled_at_input'] : '' )
 									)
 									: __( 'Send as soon as possible after confirmation', 'yoohw-advanced-notifications' )
@@ -2033,7 +2067,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			</table>
 
 			<?php if ( ! empty( $recipient_sample ) ) : ?>
-				<h2><?php esc_html_e( 'Recipient sample', 'yoohw-advanced-notifications' ); ?></h2>
+				<details class="yoohw-advanced-notifications-panel"><summary><?php esc_html_e( 'Saved recipient sample and due times', 'yoohw-advanced-notifications' ); ?></summary>
 				<table class="widefat striped" style="max-width: 920px;">
 					<thead>
 						<tr>
@@ -2084,24 +2118,28 @@ class YOOHW_AN_Customer_Email_Notify {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				</details>
 			<?php endif; ?>
 
-			<h2><?php esc_html_e( 'Message preview', 'yoohw-advanced-notifications' ); ?></h2>
+			<?php $this->render_operator_preview( $payload ); ?>
+			<?php if ( empty( $payload['recipient_sample'] ) ) : ?><h2><?php esc_html_e( 'Message preview', 'yoohw-advanced-notifications' ); ?></h2>
 			<div style="max-width: 860px; padding: 16px; background: #fff; border: 1px solid #dcdcde;">
 				<?php echo wpautop( wp_kses_post( $payload['message'] ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 				<?php echo $this->get_unsubscribe_footer_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 			</div>
 
-			<p>
+			<?php endif; ?><p>
 				<a class="button" href="<?php echo esc_url( $this->get_admin_page_url( [ 'edit_token' => $preview_token ] ) ); ?>">
 					<?php esc_html_e( 'Back to email form', 'yoohw-advanced-notifications' ); ?>
 				</a>
 			</p>
 
 			<?php if ( $recipient_count > 0 ) : ?>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<form class="yoohw-advanced-notifications-panel" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<input type="hidden" name="action" value="yoohw_an_send_product_customer_email">
 					<input type="hidden" name="confirmed" value="1">
+					<h2><?php esc_html_e( 'Confirm this saved preview', 'yoohw-advanced-notifications' ); ?></h2>
+					<p><?php esc_html_e( 'Confirmation creates this campaign with its saved recipients and content. Audience changes require a new preview. Emails already handed to the mail system cannot be recalled; inbox delivery is not verified.', 'yoohw-advanced-notifications' ); ?></p>
 					<input type="hidden" name="preview_token" value="<?php echo esc_attr( $preview_token ); ?>">
 					<?php wp_nonce_field( 'yoohw_an_send_product_customer_email_action', 'yoohw_an_send_product_customer_email_nonce' ); ?>
 					<?php
@@ -2237,6 +2275,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			'yoohw_an_send_product_customer_email_nonce'
 		);
 
+		$this->handle_authoring_submit();
+
 		$is_confirmed = isset( $_POST['confirmed'] ) && '1' === sanitize_text_field( wp_unslash( $_POST['confirmed'] ) );
 
 		if ( $is_confirmed ) {
@@ -2341,6 +2381,9 @@ class YOOHW_AN_Customer_Email_Notify {
 			$exclusion_summary = [];
 			$customers         = $this->get_recipients_by_payload( $payload, $exclusion_summary );
 
+			$payload = $this->prepare_operator_preview( $payload, $customers );
+			if ( is_wp_error( $payload ) ) { wp_die( esc_html( $payload->get_error_message() ) ); }
+			$payload['audience_audit'] = $exclusion_summary['reasons'] ?? [];
 			$payload['recipient_count']                   = count( $customers );
 			$payload['recipient_count_before_exclusions'] = isset( $exclusion_summary['base_count'] ) ? absint( $exclusion_summary['base_count'] ) : count( $customers );
 			$payload['excluded_count']                    = isset( $exclusion_summary['excluded_count'] ) ? absint( $exclusion_summary['excluded_count'] ) : 0;
@@ -2365,6 +2408,10 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$customers = $this->get_recipients_by_payload( $payload );
 
+		$changed = $this->refresh_changed_preview( $payload, $customers );
+		if ( $changed ) { wp_safe_redirect( $this->get_admin_page_url( [ 'preview_token' => $changed, 'audience_changed' => 1 ] ) ); exit; }
+		$payload = $this->prepare_operator_preview( $payload, $customers );
+		if ( is_wp_error( $payload ) ) { wp_die( esc_html( $payload->get_error_message() ) ); }
 		$result = $this->confirm_campaign( $payload, $customers );
 		if ( is_wp_error( $result ) ) {
 			wp_die( esc_html( $result->get_error_message() ), '', [ 'response' => 503 ] );
@@ -2453,7 +2500,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$existing     = $this->read_durable_option( $payload_key );
 
 		if ( null === $existing ) {
-			$stored   = $this->write_durable_option( $payload_key, $record, true );
+			$stored   = $this->write_personal_option( $payload_key, $record, true );
 			$existing = $stored ? $record : $this->read_durable_option( $payload_key );
 		}
 
@@ -2647,8 +2694,15 @@ class YOOHW_AN_Customer_Email_Notify {
 			? array_map( 'sanitize_key', (array) wp_unslash( $_POST['exclude_order_statuses'] ) )
 			: [];
 		$exclude_emails_raw = isset( $_POST['exclude_emails'] ) ? sanitize_textarea_field( wp_unslash( $_POST['exclude_emails'] ) ) : '';
-		$exclude_emails     = ! empty( $exclude_emails_raw ) ? $this->parse_email_list( $exclude_emails_raw ) : [];
+		$exclude_emails     = $this->parse_manual_email_list( $exclude_emails_raw );
+		if ( is_wp_error( $exclude_emails ) ) { return new WP_Error( 'invalid_excluded_emails', __( 'The exclusion list contains an invalid email address. Correct it before previewing.', 'yoohw-advanced-notifications' ) ); }
 
+		foreach ( [ 'product_ids', 'exclude_product_ids' ] as $field ) {
+			foreach ( (array) wp_unslash( $_POST[ $field ] ?? [] ) as $raw_id ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject non-digit or nonexistent IDs below before any audience lookup; never silently discard a malformed selection.
+				if ( ! is_scalar( $raw_id ) || ! ctype_digit( (string) $raw_id ) || ! wc_get_product( (int) $raw_id ) ) { return new WP_Error( 'invalid_product', __( 'A selected product is invalid or unavailable. Review the selection.', 'yoohw-advanced-notifications' ) ); }
+			}
+		}
+		if ( array_diff( $exclude_order_statuses, array_keys( $this->get_order_status_options() ) ) ) { return new WP_Error( 'invalid_exclusion', __( 'An excluded order status is invalid.', 'yoohw-advanced-notifications' ) ); }
 		$product_ids   = array_values( array_unique( array_filter( $product_ids ) ) );
 		$exclude_product_ids = array_values( array_unique( array_filter( $exclude_product_ids ) ) );
 		$subject       = isset( $_POST['email_subject'] ) ? sanitize_text_field( wp_unslash( $_POST['email_subject'] ) ) : '';
@@ -2670,20 +2724,23 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_invalid_source', __( 'Please choose a valid recipient source.', 'yoohw-advanced-notifications' ) );
 		}
 
-		if ( ! in_array( $schedule_mode, [ 'now', 'scheduled' ], true ) ) {
+		if ( ! in_array( $schedule_mode, [ 'now', 'scheduled', 'store', 'local' ], true ) ) {
 			return new WP_Error( 'yoohw_an_invalid_schedule_mode', __( 'Please choose a valid send time option.', 'yoohw-advanced-notifications' ) );
 		}
 
-		if ( self::SOURCE_PRODUCT_CUSTOMERS !== $recipient_source ) {
-			$product_ids = [];
+		if ( self::SOURCE_PRODUCT_CUSTOMERS !== $recipient_source && $product_ids ) {
+			return new WP_Error( 'yoohw_an_incompatible_products', __( 'Selected products apply only to Product customers. Clear the products or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
+		}
+		if ( self::SOURCE_REGISTERED_USERS !== $recipient_source && isset( $_POST['user_roles'] ) && [] !== $_POST['user_roles'] && '' !== $_POST['user_roles'] ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject retained source-incompatible input before parsing; no value is used as recipient criteria.
+			return new WP_Error( 'yoohw_an_incompatible_roles', __( 'Selected roles apply only to registered users. Clear the roles or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
+		}
+		if ( self::SOURCE_MANUAL_EMAILS !== $recipient_source && isset( $_POST['manual_emails'] ) && ( ! is_string( $_POST['manual_emails'] ) || '' !== trim( wp_unslash( $_POST['manual_emails'] ) ) ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject malformed or nonempty incompatible raw lists before the strict email parser.
+			return new WP_Error( 'yoohw_an_incompatible_manual_list', __( 'The pasted email list applies only to Manual email list. Clear the list or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
 		}
 
 		$scheduled_at_timestamp = 0;
 
-		if ( $test_mode ) {
-			$schedule_mode = 'now';
-			$scheduled_at  = '';
-		} elseif ( 'scheduled' === $schedule_mode ) {
+		if ( ! $test_mode && in_array( $schedule_mode, [ 'scheduled', 'store', 'local' ], true ) ) {
 			$scheduled_at_timestamp = $this->parse_scheduled_timestamp( $scheduled_at, new DateTimeZone( 'UTC' ) );
 
 			if ( ! $scheduled_at_timestamp ) {
@@ -2760,6 +2817,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			'exclusion_labels'       => $this->get_exclusion_labels( $exclusions ),
 		];
 
+		$payload = $this->extend_authoring_payload( $payload );
+		if ( is_wp_error( $payload ) ) { return $payload; }
 		$payload['campaign_hash'] = $this->generate_campaign_hash( $payload );
 		$payload['delivery_id']   = wp_generate_uuid4();
 		$payload['campaign_id']   = substr( $payload['campaign_hash'], 0, 8 ) . '-' . substr( str_replace( '-', '', $payload['delivery_id'] ), 0, 8 );
@@ -2769,7 +2828,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 	private function generate_campaign_hash( $payload ) {
-		$hash_payload = [
+		$hash_payload = [ 'filters' => $payload['filters'] ?? [], 'schedule_policy' => $payload['schedule_policy'] ?? '', 'store_timezone' => $payload['store_timezone'] ?? '',
 			'recipient_source' => isset( $payload['recipient_source'] ) ? (string) $payload['recipient_source'] : self::SOURCE_PRODUCT_CUSTOMERS,
 			'product_ids'      => isset( $payload['product_ids'] ) ? array_map( 'absint', (array) $payload['product_ids'] ) : [],
 			'subject'          => isset( $payload['subject'] ) ? (string) $payload['subject'] : '',
@@ -2800,7 +2859,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	private function store_preview_payload( $payload ) {
 		$preview_token = wp_generate_uuid4();
 
-		set_transient(
+		$this->set_personal_transient(
 			$this->get_preview_transient_key( $preview_token ),
 			$payload,
 			30 * MINUTE_IN_SECONDS
@@ -2820,7 +2879,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_expired_preview', __( 'The email preview expired. Please review the form and try again.', 'yoohw-advanced-notifications' ) );
 		}
 
-		return $payload;
+		return $this->validate_preview_revision( $payload );
 	}
 
 	private function get_restore_payload( $preview_token ) {
@@ -3015,6 +3074,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			]
 		);
 
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'schedule_summary' ] as $field ) { if ( isset( $payload[ $field ] ) ) { $entry[ $field ] = $payload[ $field ]; } }
 		$entry['status_counts'] = isset( $existing['status_counts'] ) && is_array( $existing['status_counts'] )
 			? $this->sanitize_count_map( $existing['status_counts'] )
 			: [];
@@ -3125,7 +3185,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		array_unshift( $logs, $event );
 		$logs = array_slice( $logs, 0, self::CAMPAIGN_LOG_LIMIT );
 
-		$this->update_nonautoload_option( self::OPTION_CAMPAIGN_LOGS, $logs );
+		$this->write_personal_option( self::OPTION_CAMPAIGN_LOGS, $logs );
 		$this->increment_campaign_status_count( $event );
 
 		if (
@@ -3266,13 +3326,14 @@ class YOOHW_AN_Customer_Email_Notify {
 			'exclusion_labels'       => isset( $campaign['exclusion_labels'] ) && is_array( $campaign['exclusion_labels'] ) ? $this->sanitize_text_list( $campaign['exclusion_labels'] ) : [],
 		];
 
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone' ] as $field ) { if ( isset( $campaign[ $field ] ) ) { $payload[ $field ] = $campaign[ $field ]; } }
 		if ( empty( $payload['products_label'] ) ) {
 			$payload['products_label'] = ! empty( $payload['product_ids'] )
 				? $this->get_selected_products_label( $payload['product_ids'] )
 				: $payload['recipient_source_label'];
 		}
 
-		if ( 'scheduled' === $payload['schedule_mode'] && empty( $payload['scheduled_at_timestamp'] ) ) {
+		if ( in_array( $payload['schedule_mode'], [ 'scheduled', 'store', 'local' ], true ) && empty( $payload['scheduled_at_timestamp'] ) ) {
 			$payload['scheduled_at_timestamp'] = $this->parse_scheduled_timestamp( $payload['scheduled_at_input'], new DateTimeZone( 'UTC' ) );
 		}
 
@@ -3289,7 +3350,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		}
 
 		if (
-			( 'scheduled' === $payload['schedule_mode'] && empty( $payload['scheduled_at_input'] ) ) ||
+			( in_array( $payload['schedule_mode'], [ 'scheduled', 'store', 'local' ], true ) && empty( $payload['scheduled_at_input'] ) ) ||
 			empty( $payload['subject'] ) ||
 			empty( $payload['heading'] ) ||
 			empty( $payload['message'] )
@@ -3511,6 +3572,9 @@ class YOOHW_AN_Customer_Email_Notify {
 		$status = sanitize_key( $status );
 
 		$labels = [
+			'paused' => __( 'Paused', 'yoohw-advanced-notifications' ),
+			'paused_wait' => __( 'Paused', 'yoohw-advanced-notifications' ),
+			'rate_wait' => __( 'Waiting for site limit', 'yoohw-advanced-notifications' ),
 			'preparing'             => __( 'Saving recipient snapshot', 'yoohw-advanced-notifications' ),
 			'needs_attention'       => __( 'Needs attention', 'yoohw-advanced-notifications' ),
 			'previewed'             => __( 'Previewed', 'yoohw-advanced-notifications' ),
@@ -3587,13 +3651,14 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function get_campaign_delivery_label( $campaign ) {
+		if ( isset( $campaign['schedule_policy'] ) && 'now' !== ( $campaign['schedule_mode'] ?? 'now' ) ) { return ( $campaign['scheduled_at_input'] ?? '' ) . ' / ' . ( 'store' === $campaign['schedule_mode'] ? ( $campaign['store_timezone'] ?? 'UTC' ) : __( 'Recipient location estimate / UTC fallback', 'yoohw-advanced-notifications' ) ); }
 		if ( ! empty( $campaign['test_mode'] ) ) {
 			return __( 'Test email only', 'yoohw-advanced-notifications' );
 		}
 
 		$schedule_mode = isset( $campaign['schedule_mode'] ) ? sanitize_key( $campaign['schedule_mode'] ) : 'now';
 
-		if ( 'scheduled' === $schedule_mode ) {
+		if ( in_array( $schedule_mode, [ 'scheduled', 'store', 'local' ], true ) ) {
 			$scheduled_at = isset( $campaign['scheduled_at_input'] ) ? sanitize_text_field( $campaign['scheduled_at_input'] ) : '';
 
 			return sprintf(
@@ -3623,6 +3688,8 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$order = [
 			'dispatch_pending',
+			'paused_wait',
+			'rate_wait',
 			'queued',
 			'scheduled',
 			'processing',
@@ -3825,12 +3892,13 @@ class YOOHW_AN_Customer_Email_Notify {
 	private function is_payload_scheduled( $payload ) {
 		return (
 			isset( $payload['schedule_mode'], $payload['scheduled_at_input'] ) &&
-			'scheduled' === $payload['schedule_mode'] &&
+			in_array( $payload['schedule_mode'], [ 'scheduled', 'store', 'local' ], true ) &&
 			'' !== trim( (string) $payload['scheduled_at_input'] )
 		);
 	}
 
 	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true, $reference_time = null ) {
+		if ( isset( $payload['schedule_policy'] ) ) { return $this->operator_schedule( $payload, $recipient ); }
 		$reference_time = null === $reference_time ? time() : absint( $reference_time );
 		$country       = isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '';
 		$state         = isset( $recipient['state'] ) ? $this->normalize_location_part( $recipient['state'] ) : '';
@@ -4214,6 +4282,8 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function validate_recipient_source_options( $payload ) {
+		$valid = $this->validate_audience_filters( $payload );
+		if ( is_wp_error( $valid ) ) { return $valid; }
 		$source = isset( $payload['recipient_source'] ) ? $payload['recipient_source'] : '';
 		if ( ! is_string( $source ) || ! isset( $this->get_recipient_sources()[ $source ] ) ) {
 			return new WP_Error( 'yoohw_an_invalid_source', __( 'Please choose a valid recipient source.', 'yoohw-advanced-notifications' ) );
@@ -4245,9 +4315,15 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function get_recipients_by_payload( $payload, &$exclusion_summary = null ) {
-		$recipients     = $this->get_base_recipients_by_payload( $payload );
-		$base_count     = count( $recipients );
+		$baseline = $payload;
+		$baseline['filters'] = array_intersect_key( $payload['filters'] ?? [], [ 'order_statuses' => true ] );
+		$base_count = count( $this->get_base_recipients_by_payload( $baseline ) );
+		$recipients = $this->get_base_recipients_by_payload( $payload );
+		$order_removed = max( 0, $base_count - count( $recipients ) );
+		$before_common = count( $recipients );
 		$excluded_count = 0;
+		$recipients     = $this->apply_audience_filters( $recipients, $payload );
+		$common_removed = $before_common - count( $recipients );
 		$recipients     = $this->apply_recipient_exclusions( $recipients, $payload, $excluded_count );
 		$labels         = $this->get_exclusion_labels( isset( $payload['exclusions'] ) && is_array( $payload['exclusions'] ) ? $payload['exclusions'] : [] );
 
@@ -4256,8 +4332,9 @@ class YOOHW_AN_Customer_Email_Notify {
 		}
 
 		$exclusion_summary = [
+			'reasons' => [ 'order_conditions' => $order_removed, 'subscription_or_history' => $common_removed, 'explicit_exclusions_or_suppression' => $excluded_count ],
 			'base_count'     => $base_count,
-			'excluded_count' => $excluded_count,
+			'excluded_count' => $base_count - count( $recipients ),
 			'labels'         => $labels,
 		];
 
@@ -4277,7 +4354,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				return $this->get_registered_user_recipients( [], isset( $payload['user_roles'] ) ? $payload['user_roles'] : [] );
 
 			case self::SOURCE_WOOCOMMERCE_CUSTOMERS:
-				return $this->get_order_customer_recipients();
+				return $this->get_order_customer_recipients( null, $payload['filters'] ?? [] );
 
 			case self::SOURCE_MANUAL_EMAILS:
 				return array_map( static function ( $email ) {
@@ -4287,7 +4364,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 			case self::SOURCE_PRODUCT_CUSTOMERS:
 				$product_ids = isset( $payload['product_ids'] ) ? $payload['product_ids'] : [];
-				return $this->get_customers_by_products( $product_ids );
+				return $this->get_order_customer_recipients( $product_ids, $payload['filters'] ?? [] );
 
 			default:
 				return [];
@@ -4299,9 +4376,6 @@ class YOOHW_AN_Customer_Email_Notify {
 		$exclusions     = isset( $payload['exclusions'] ) && is_array( $payload['exclusions'] ) ? $payload['exclusions'] : [];
 		$lookup         = $this->get_recipient_exclusion_lookup( $exclusions );
 
-		if ( empty( $lookup['emails'] ) && empty( $lookup['user_ids'] ) ) {
-			return $recipients;
-		}
 
 		$filtered = [];
 
@@ -4310,7 +4384,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			$user_id = isset( $recipient['user_id'] ) ? absint( $recipient['user_id'] ) : 0;
 
 			if (
-				( ! empty( $email ) && isset( $lookup['emails'][ $email ] ) ) ||
+				( ! empty( $email ) && ( isset( $lookup['emails'][ $email ] ) || $this->is_email_unsubscribed( $email ) ) ) ||
 				( $user_id && isset( $lookup['user_ids'][ $user_id ] ) )
 			) {
 				$excluded_count++;
@@ -4426,7 +4500,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		}
 
 		$record = $this->read_durable_option( 'yoohw_an_optout_' . hash( 'sha256', $email ) );
-		if ( is_array( $record ) && $email === ( $record['email'] ?? '' ) ) { return true; }
+		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ) { return true; }
+		if ( is_array( $record ) && ( ! empty( $record['suppressed'] ) || $email === ( $record['email'] ?? '' ) ) ) { return true; }
 		$legacy = $this->normalize_unsubscribed_emails( $this->read_durable_option( self::OPTION_UNSUBSCRIBED_EMAILS ) );
 		return isset( $legacy[ $email ] );
 	}
@@ -4480,11 +4555,15 @@ class YOOHW_AN_Customer_Email_Notify {
 			return false;
 		}
 
+		if ( ! $this->acquire_campaign_lock( '__privacy__', 2 ) ) { return false; }
+		try {
 		$key = 'yoohw_an_optout_' . hash( 'sha256', $email );
-		$data = [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
+		$data = $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ? [ 'suppressed' => true ] : [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
+		$data = $this->scrub_erased_references( $data );
 		$this->write_durable_option( $key, $data, true );
 		$saved = $this->read_durable_option( $key );
-		return is_array( $saved ) && $email === ( $saved['email'] ?? '' );
+		return is_array( $saved ) && ( ! empty( $saved['suppressed'] ) || $email === ( $saved['email'] ?? '' ) );
+		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
 	private function get_unsubscribe_token( $email ) {
@@ -4776,10 +4855,18 @@ class YOOHW_AN_Customer_Email_Notify {
 		$delivery_id = ! empty( $raw_args['delivery_id'] ) ? sanitize_text_field( $raw_args['delivery_id'] ) : $campaign_id;
 		$to = strtolower( sanitize_email( $raw_args['to'] ?? '' ) );
 		$action_id = $this->get_current_action_id();
-		if ( ! $this->ensure_delivery_row( $campaign_id, $delivery_id, $to ) ) {
+		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $to ) ) ) { return; }
+		$ready = $this->ensure_delivery_row( $campaign_id, $delivery_id, $to );
+		if ( is_wp_error( $ready ) && 'privacy_busy' === $ready->get_error_code() && $action_id ) {
+			// The original AS action owns all plaintext. Save only its identity/checksum before it fails, so existing import/recovery can resume this known pre-handoff wait.
+			$marker = [ 'action_id' => $action_id, 'args_hash' => hash( 'sha256', wp_json_encode( $raw_args ) ), 'email_hash' => hash( 'sha256', $to ) ];
+			if ( false === $this->write_durable_option( 'yoohw_an_privacy_wait_' . $action_id, $marker ) || $marker !== $this->read_durable_option( 'yoohw_an_privacy_wait_' . $action_id ) ) { throw new RuntimeException( 'Privacy wait checkpoint unavailable; no mail was handed off.' ); }
+			throw new RuntimeException( 'Privacy cleanup busy before recipient initialization; saved for campaign recovery. No mail was handed off.' );
+		}
+		if ( ! $ready || is_wp_error( $ready ) ) {
 			throw new RuntimeException( 'Recipient storage unavailable; no mail was handed off.' );
 		}
-		$claim = $this->claim_recipient_delivery( $campaign_id, $delivery_id, $to, $action_id );
+		$claim = $this->admit_delivery( $campaign_id, $delivery_id, $to, $action_id );
 		if ( false === $claim ) {
 			return; // A duplicate job is not another recipient outcome.
 		}
@@ -4836,7 +4923,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$token = wp_generate_uuid4();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Compare-and-set grants exactly one worker the send claim; cached reads followed by writes could permit duplicate mail handoffs.
 		$result = $wpdb->query( $wpdb->prepare(
-			"UPDATE %i SET status = 'processing', claim_token = %s, action_id = %d, attempts = GREATEST(attempts,1), updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled') AND claim_token = ''",
+			"UPDATE %i SET status = 'processing', claim_token = %s, action_id = %d, attempts = GREATEST(attempts,1), updated_at = %s WHERE campaign_id = %s AND delivery_id = %s AND email_hash = %s AND status IN ('dispatch_pending','queued','scheduled','paused_wait','rate_wait') AND claim_token = ''",
 			$table, $token, $action_id, current_time( 'mysql', true ), $campaign_id, $delivery_id, $hash
 		) );
 		return 1 === $result ? $token : false;
@@ -4879,7 +4966,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		return $this->get_order_customer_recipients( (array) $product_ids );
 	}
 
-	private function get_order_customer_recipients( $product_ids = null ) {
+	private function get_order_customer_recipients( $product_ids = null, $filters = [] ) {
 		$all_products = null === $product_ids;
 		$product_ids = $all_products ? [] : $product_ids;
 		$product_ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $product_ids ) ) ) );
@@ -4938,7 +5025,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				[
 					'limit'   => self::ORDER_QUERY_LIMIT,
 					'paged'   => $page,
-					'status'  => [ 'processing', 'completed' ],
+					'status'  => ! empty( $filters['order_statuses'] ) ? $filters['order_statuses'] : [ 'processing', 'completed' ],
 					'return'  => 'objects',
 					'orderby' => 'ID',
 					'order'   => 'DESC',
@@ -4954,6 +5041,7 @@ class YOOHW_AN_Customer_Email_Notify {
 					continue;
 				}
 
+				if ( ! $this->order_matches_filters( $order, $filters ) ) { continue; }
 				$has_product = $all_products;
 
 				foreach ( ( $all_products ? [] : $order->get_items( 'line_item' ) ) as $item ) {
@@ -5227,6 +5315,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function log_campaign_event( $campaign_id, $email, $status, $message = '', $action_id = 0 ) {
+		if ( is_email( $email ) && $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', strtolower( $email ) ) ) ) { return; }
 		$campaign_id = ! empty( $campaign_id ) ? sanitize_text_field( $campaign_id ) : 'unknown';
 		$email       = ! empty( $email ) ? sanitize_email( $email ) : 'unknown';
 		$status      = sanitize_key( $status );
@@ -5234,16 +5323,14 @@ class YOOHW_AN_Customer_Email_Notify {
 		$action_id   = absint( $action_id );
 
 		$log_message = sprintf(
-			'campaign=%1$s email=%2$s status=%3$s action_id=%4$d',
+			'campaign=%1$s email_hash=%2$s status=%3$s action_id=%4$d',
 			$campaign_id,
-			$email,
+			hash( 'sha256', strtolower( $email ) ),
 			$status,
 			$action_id
 		);
 
-		if ( ! empty( $message ) ) {
-			$log_message .= ' message=' . $message;
-		}
+		// Personal diagnostic text stays in the recipient table, where erasure and retention can remove it.
 
 		$stored_in_tracking = $this->store_campaign_log_event( $campaign_id, $email, $status, $message, $action_id );
 
@@ -5278,9 +5365,18 @@ class YOOHW_AN_Customer_Email_Notify {
 		wp_enqueue_script( 'wc-enhanced-select' );
 		wp_enqueue_style( 'woocommerce_admin_styles' );
 
-		wp_enqueue_style( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.css', dirname( __FILE__ ) ), [ 'woocommerce_admin_styles' ], YOOHW_AN_VERSION );
+		$asset_version = YOOHW_AN_VERSION . '.' . (string) max( filemtime( dirname( __DIR__ ) . '/assets/admin.js' ), filemtime( dirname( __DIR__ ) . '/assets/admin.css' ) );
+		wp_enqueue_style( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.css', dirname( __FILE__ ) ), [ 'woocommerce_admin_styles' ], $asset_version );
 
-		wp_enqueue_script( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.js', dirname( __FILE__ ) ), [ 'jquery', 'wc-enhanced-select' ], YOOHW_AN_VERSION, true );
+		global $_wp_admin_css_colors;
+		$scheme = get_user_option( 'admin_color' ) ?: 'fresh';
+		$scheme_colors = $_wp_admin_css_colors[ $scheme ]->colors ?? [];
+		$accent = sanitize_hex_color( $scheme_colors[2] ?? '' );
+		if ( $accent ) {
+			wp_add_inline_style( 'yoohw-advanced-notifications-admin', 'body.marketing_page_yoohw-advanced-notifications,.yoohw-an-workspace{--an-scheme-accent:' . $accent . ';}' );
+		}
+
+		wp_enqueue_script( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.js', dirname( __FILE__ ) ), [ 'jquery', 'wc-enhanced-select' ], $asset_version, true );
 		wp_add_inline_script(
 			'yoohw-advanced-notifications-admin',
 			'var yoohwAN = ' . wp_json_encode( [

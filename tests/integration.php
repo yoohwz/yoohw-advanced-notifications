@@ -68,7 +68,7 @@ try {
 	$role_recipients = $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users', 'user_roles' => [ 'shop_manager', 'subscriber' ] ] );
 	$assert( 'roles_match_any_and_deduplicate_users', 2 === count( $role_recipients ) );
 	$assert( 'invalid_role_does_not_expand_audience', [] === $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users', 'user_roles' => [ 'missing-role' ] ] ) );
-	$assert( 'empty_roles_preserve_all_users', 3 === count( $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users' ] ) ) );
+	$assert( 'empty_roles_preserve_all_users', count( get_users( [ 'fields' => 'ID' ] ) ) === count( $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'registered_users' ] ) ) );
 	$assert( 'registered_users_are_selectable', in_array( $tag . '@example.com', array_column( $call( 'get_registered_user_recipients' ), 'email' ), true ) );
 	$product = new WC_Product_Simple();
 	$product->set_name( 'Notification test product' );
@@ -123,8 +123,26 @@ try {
 	$assert( 'invalid_role_request_rejected', is_wp_error( $call( 'get_payload_from_request' ) ) );
 	$_POST['user_roles'] = 'customer';
 	$assert( 'malformed_role_request_rejected', is_wp_error( $call( 'get_payload_from_request' ) ) );
+	unset( $_POST['user_roles'] );
 	$_POST['recipient_source'] = 'woocommerce_customers';
 	$assert( 'woocommerce_customer_request_needs_no_products', ! is_wp_error( $call( 'get_payload_from_request' ) ) );
+	$_POST['product_ids'] = [ $product->get_id() ];
+	$switched_products = $call( 'get_payload_from_request' );
+	$assert( 'product_to_woocommerce_switch_rejects_retained_scope', is_wp_error( $switched_products ) && 'yoohw_an_incompatible_products' === $switched_products->get_error_code() );
+	unset( $_POST['product_ids'] );
+	$assert( 'explicitly_cleared_products_allow_woocommerce_source', ! is_wp_error( $call( 'get_payload_from_request' ) ) );
+	$_POST['recipient_source'] = 'manual_emails';
+	$_POST['manual_emails'] = 'scope-switch@example.com';
+	$_POST['user_roles'] = [ 'customer' ];
+	$switched_roles = $call( 'get_payload_from_request' );
+	$assert( 'roles_to_manual_switch_rejects_retained_scope', is_wp_error( $switched_roles ) && 'yoohw_an_incompatible_roles' === $switched_roles->get_error_code() );
+	unset( $_POST['user_roles'] );
+	$assert( 'explicitly_cleared_roles_allow_manual_source', ! is_wp_error( $call( 'get_payload_from_request' ) ) );
+	$_POST['recipient_source'] = 'woocommerce_customers';
+	$switched_list = $call( 'get_payload_from_request' );
+	$assert( 'manual_to_woocommerce_switch_rejects_retained_scope', is_wp_error( $switched_list ) && 'yoohw_an_incompatible_manual_list' === $switched_list->get_error_code() );
+	unset( $_POST['manual_emails'] );
+	$assert( 'explicitly_cleared_manual_list_allows_woocommerce_source', ! is_wp_error( $call( 'get_payload_from_request' ) ) );
 	$_POST['recipient_source'] = 'manual_emails';
 	$_POST['manual_emails'] = "One@example.com, one@example.com;\ntwo@example.com three@example.com";
 	$manual_payload = $call( 'get_payload_from_request' );
@@ -255,12 +273,17 @@ try {
 	ob_start();
 	$notify->render_page();
 	$html = ob_get_clean();
-	$assert( 'campaign_form_omits_removed_features', false !== strpos( $html, 'Campaigns &amp; Logs' ) && false === stripos( $html, 'subscription' ) && false === stripos( $html, 'audience-sync' ) );
-	foreach ( [ 'campaigns', 'settings' ] as $tab ) {
+	$assert( 'campaign_form_omits_removed_features', 1 === preg_match( '/>\s*Campaigns\s*<\/a>/', $html ) && false !== strpos( $html, 'Subscription status' ) && false === stripos( $html, 'audience-sync' ) );
+	$assert( 'compose_keeps_single_draft_and_existing_post_authority', 1 === substr_count( $html, 'name="draft_id"' ) && 1 === substr_count( $html, 'name="internal_name"' ) && false !== strpos( $html, 'yoohw_an_send_product_customer_email_nonce' ) && false !== strpos( $html, 'wp-email_message-wrap' ) );
+	$assert( 'compose_has_four_progressive_steps', 4 === substr_count( $html, 'data-an-panel=' ) && false === strpos( $html, 'data-an-panel="audience" hidden' ) && false === strpos( $html, 'data-an-panel="content" hidden' ) && false !== strpos( $html, 'id="yoohw-advanced-notifications-primary-action"' ) );
+	foreach ( [ 'campaigns', 'library', 'subscribers', 'settings' ] as $tab ) {
 		$_GET['tab'] = $tab;
 		ob_start();
 		$notify->render_page();
-		$assert( $tab . '_tab_renders', strlen( ob_get_clean() ) > 500 );
+		$tab_html = ob_get_clean();
+		$assert( $tab . '_tab_renders', strlen( $tab_html ) > 500 );
+		if ( 'settings' === $tab ) { $assert( 'settings_separates_subscriber_mutations', false === strpos( $tab_html, 'value="preview_import"' ) && false !== strpos( $tab_html, 'name="retention_days"' ) && false !== strpos( $tab_html, 'export-personal-data.php' ) ); }
+		if ( 'subscribers' === $tab ) { $assert( 'subscribers_keep_preview_apply_nonce_authority', false !== strpos( $tab_html, 'value="preview_import"' ) && false !== strpos( $tab_html, 'name="evidence_source"' ) && false !== strpos( $tab_html, 'name="_wpnonce"' ) && false === strpos( $tab_html, 'name="retention_days"' ) ); }
 	}
 } catch ( Throwable $error ) {
 	$checks['unexpected_exception'] = false;

@@ -40,9 +40,14 @@ wp plugin activate yoohw-advanced-notifications --path="$site_root"
 } > "$evidence_root/environment.txt"
 
 wp eval-file "$plugin_source/tests/integration.php" --path="$site_root" | tee "$evidence_root/integration.log"
+wp eval-file "$plugin_source/tests/operator-features.php" --path="$site_root" | tee "$evidence_root/operator-features.log"
 wp --skip-plugins --skip-themes eval-file "$plugin_source/tests/internationalization.php" --path="$site_root" | tee "$evidence_root/internationalization.log"
 
 # reliability.py launches independent WP-CLI processes through this wrapper.
 printf '#!/usr/bin/env bash\nexec wp --path=%q "$@"\n' "$site_root" > "$test_root/wp"
 chmod +x "$test_root/wp"
 python3 tests/reliability.py --wp-command "$test_root/wp" --output "$evidence_root/reliability" | tee "$evidence_root/reliability.log"
+
+python3 tests/operator-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/operator-concurrency" | tee "$evidence_root/operator-concurrency.log"
+
+python3 tests/privacy-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/privacy-concurrency" | tee "$evidence_root/privacy-concurrency.log"
