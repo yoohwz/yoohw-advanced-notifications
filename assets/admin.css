@@ -804,6 +804,8 @@ body.marketing_page_yoohw-advanced-notifications .select2-results__option--highl
 }
 
 .yoohw-an-workspace .select2-container { max-width: 100%; min-width: 0; }
-.an-preview-devices { display: flex; gap: 4px; margin: 12px 0; }
+.an-preview-devices { display: flex; justify-content: flex-end; gap: 6px; margin: 12px 0; }
 .yoohw-an-workspace .an-preview-device { display: inline-flex; align-items: center; justify-content: center; width: 40px; padding: 0; }
 .yoohw-an-workspace .an-preview-device[aria-pressed="true"] { border: 2px solid var(--an-accent); background: #f6f7f7; color: var(--an-accent); }
+
+.yoohw-an-workspace .an-preview-device .dashicons { display: block; width: 20px; height: 20px; margin: 0; font-size: 20px; line-height: 20px; }
