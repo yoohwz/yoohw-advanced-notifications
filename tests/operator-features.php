@@ -138,6 +138,10 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$assert( 'filter_changes_change_campaign_hash', $call( 'generate_campaign_hash', $p ) !== $call( 'generate_campaign_hash', array_merge( $p, [ 'filters' => [ 'subscription' => 'subscribed' ] ] ) ) );
 		$assert( 'timezone_policy_changes_campaign_hash', $call( 'generate_campaign_hash', $p ) !== $call( 'generate_campaign_hash', array_merge( $p, [ 'schedule_policy' => 'strict_v1', 'store_timezone' => 'Asia/Ho_Chi_Minh' ] ) ) );
 		$assert( 'zero_day_filter_rejected', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'last_days' => '0' ] ] ) ) );
+		$stale = [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'country' => 'ZZ', 'category_ids' => [ '99999999' ], 'order_statuses' => [ 'wc-removed' ], 'date_from' => '2026-02-30' ] ];
+		ob_start(); $call( 'render_audience_fields', $stale ); $stale_html = ob_get_clean();
+		$assert( 'unavailable_saved_conditions_remain_selected', preg_match( '/value="ZZ" selected/', $stale_html ) && preg_match( '/value="99999999" selected/', $stale_html ) && preg_match( '/value="wc-removed" selected/', $stale_html ) );
+		$assert( 'invalid_saved_date_survives_native_form_roundtrip', str_contains( $stale_html, 'type="text" name="audience_filters[date_from]" value="2026-02-30"' ) );
 		$assert( 'malformed_status_list_rejected', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => [ 'order_statuses' => 'completed' ] ] ) ) );
 		$_POST = [ 'audience_filters' => [ 'last_days' => [ '7' ] ] ];
 		$assert( 'malformed_request_cannot_drop_filter', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => $call( 'filters_from_request' ) ] ) ) );

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T06:53:53+00:00\n"
+"POT-Creation-Date: 2026-10-28T07:00:58+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
@@ -734,8 +734,8 @@ msgid "Name"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:2068
-#: includes/trait-campaign-audiences.php:105
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:114
+#: includes/trait-campaign-audiences.php:128
 msgid "Billing country"
 msgstr ""
 
@@ -1055,7 +1055,7 @@ msgid "Completed with issues"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:3578
-#: includes/trait-campaign-audiences.php:112
+#: includes/trait-campaign-audiences.php:122
 #: includes/trait-campaign-controls.php:149
 msgid "Handed to mail system"
 msgstr ""
@@ -1252,123 +1252,131 @@ msgid "Invalid or inapplicable audience conditions. Review source, dates, status
 msgstr ""
 
 #: includes/trait-campaign-audiences.php:98
+msgid "Unavailable selection; remove or replace:"
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:104
+msgid "Saved conditions are invalid or unavailable. They remain selected; correct or explicitly remove them before previewing."
+msgstr ""
+
+#: includes/trait-campaign-audiences.php:105
 msgid "Audience conditions"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:99
+#: includes/trait-campaign-audiences.php:106
 msgid "Order created from (store timezone)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:99
+#: includes/trait-campaign-audiences.php:106
 msgid "Through date (inclusive)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:99
+#: includes/trait-campaign-audiences.php:106
 msgid "Or last N × 24 hours"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:100
+#: includes/trait-campaign-audiences.php:107
 msgid "Matching order statuses (default processing/completed)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:102
+#: includes/trait-campaign-audiences.php:110
 msgid "Categories (includes all descendants)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:107
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:117
+#: includes/trait-campaign-audiences.php:128
 msgid "Subscription status"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:108
+#: includes/trait-campaign-audiences.php:118
 msgid "Any (suppression still applies)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:108
+#: includes/trait-campaign-audiences.php:118
 msgid "Subscribed"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:108
+#: includes/trait-campaign-audiences.php:118
 msgid "No confirmation recorded"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:108
+#: includes/trait-campaign-audiences.php:118
 msgid "Unsubscribed (excluded from sending)"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:109
+#: includes/trait-campaign-audiences.php:119
 msgid "Campaign history"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:112
+#: includes/trait-campaign-audiences.php:122
 msgid "Known unsent terminal outcome"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:113
+#: includes/trait-campaign-audiences.php:123
 msgid "Order filters use order creation time in the store timezone and match on one order, including product/variation, status and billing country. Categories include descendants and use current product categories. Registered users use profile billing country; manual lists have no country. Missing data fails the condition. History uses handoff only: unknown, pending and missing history never qualify as known unsent. Existing exclusions and durable opt-outs apply last."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Order created from"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Through date"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Last N days"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "History campaign"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Handoff condition"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Categories including descendants"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:118
+#: includes/trait-campaign-audiences.php:128
 msgid "Matching order statuses"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:119
+#: includes/trait-campaign-audiences.php:129
 msgid "Saved audience conditions"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:131
+#: includes/trait-campaign-audiences.php:141
 msgid "Inspect an address against current criteria"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:131
+#: includes/trait-campaign-audiences.php:141
 msgid "Inspect"
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:137
+#: includes/trait-campaign-audiences.php:147
 msgid "Not in the selected source or product purchasers."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:138
+#: includes/trait-campaign-audiences.php:148
 msgid "No single order matches all order conditions, or billing country is missing/different."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:139
+#: includes/trait-campaign-audiences.php:149
 msgid "Subscription status or known campaign handoff condition does not match."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:140
+#: includes/trait-campaign-audiences.php:150
 msgid "Matched source and all conditions; removed by an explicit exclusion."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:141
+#: includes/trait-campaign-audiences.php:151
 msgid "Included: matches source and every applicable condition; no exclusion matched."
 msgstr ""
 
-#: includes/trait-campaign-audiences.php:142
+#: includes/trait-campaign-audiences.php:152
 msgid "Excluded: durable unsubscribe/suppression."
 msgstr ""
 

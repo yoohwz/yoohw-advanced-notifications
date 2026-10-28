@@ -93,17 +93,27 @@ trait YOOHW_AN_Campaign_Audiences {
 		}
 		return $result;
 	}
+	private function render_unavailable_options( $selected, $known ) {
+		foreach ( array_diff( array_map( 'strval', (array) $selected ), array_map( 'strval', $known ) ) as $value ) {
+			if ( '' !== $value ) { echo '<option value="' . esc_attr( $value ) . '" selected="selected">' . esc_html__( 'Unavailable selection; remove or replace:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $value ) . '</option>'; }
+		}
+	}
 	private function render_audience_fields( $p ) {
 		$f = $p['filters'] ?? [];
+		$invalid = is_wp_error( $this->validate_audience_filters( $p ) );
+		if ( $invalid ) { echo '<p role="alert">' . esc_html__( 'Saved conditions are invalid or unavailable. They remain selected; correct or explicitly remove them before previewing.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Audience conditions', 'yoohw-advanced-notifications' ) . '</h2><div class="an-order-filters">';
-		foreach ( [ 'date_from' => [ 'date', __( 'Order created from (store timezone)', 'yoohw-advanced-notifications' ) ], 'date_to' => [ 'date', __( 'Through date (inclusive)', 'yoohw-advanced-notifications' ) ], 'last_days' => [ 'number', __( 'Or last N × 24 hours', 'yoohw-advanced-notifications' ) ] ] as $key => $field ) { echo '<p><label>' . esc_html( $field[1] ) . ' <input type="' . esc_attr( $field[0] ) . '" name="audience_filters[' . esc_attr( $key ) . ']" value="' . esc_attr( $f[ $key ] ?? '' ) . '"></label></p>'; }
+		foreach ( [ 'date_from' => [ 'date', __( 'Order created from (store timezone)', 'yoohw-advanced-notifications' ) ], 'date_to' => [ 'date', __( 'Through date (inclusive)', 'yoohw-advanced-notifications' ) ], 'last_days' => [ 'number', __( 'Or last N × 24 hours', 'yoohw-advanced-notifications' ) ] ] as $key => $field ) { echo '<p><label>' . esc_html( $field[1] ) . ' <input type="' . esc_attr( $invalid ? 'text' : $field[0] ) . '" name="audience_filters[' . esc_attr( $key ) . ']" value="' . esc_attr( $f[ $key ] ?? '' ) . '"></label></p>'; }
 		echo '<label>' . esc_html__( 'Matching order statuses (default processing/completed)', 'yoohw-advanced-notifications' ) . '<select multiple name="audience_filters[order_statuses][]">';
 		foreach ( $this->get_order_status_options() as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( in_array( $key, $f['order_statuses'] ?? [], true ), true, false ) . '>' . esc_html( $label ) . '</option>'; }
+		$this->render_unavailable_options( $f['order_statuses'] ?? [], array_keys( $this->get_order_status_options() ) );
 		echo '</select></label><p><label>' . esc_html__( 'Categories (includes all descendants)', 'yoohw-advanced-notifications' ) . '<select multiple name="audience_filters[category_ids][]">';
 		$terms = get_terms( [ 'taxonomy' => 'product_cat', 'hide_empty' => false ] );
 		foreach ( is_wp_error( $terms ) ? [] : $terms as $term ) { echo '<option value="' . esc_attr( $term->term_id ) . '" ' . selected( in_array( (string) $term->term_id, array_map( 'strval', $f['category_ids'] ?? [] ), true ), true, false ) . '>' . esc_html( $term->name ) . '</option>'; }
+		$this->render_unavailable_options( $f['category_ids'] ?? [], is_wp_error( $terms ) ? [] : wp_list_pluck( $terms, 'term_id' ) );
 		echo '</select></label></p></div><div class="an-country-filter"><label>' . esc_html__( 'Billing country', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[country]"><option value="">—</option>';
 		foreach ( function_exists( 'WC' ) && WC()->countries ? WC()->countries->get_countries() : [] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['country'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
+		$this->render_unavailable_options( [ $f['country'] ?? '' ], function_exists( 'WC' ) && WC()->countries ? array_keys( WC()->countries->get_countries() ) : [] );
 		echo '</select></label></div><p><label>' . esc_html__( 'Subscription status', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[subscription]">';
 		foreach ( [ '' => __( 'Any (suppression still applies)', 'yoohw-advanced-notifications' ), 'subscribed' => __( 'Subscribed', 'yoohw-advanced-notifications' ), 'unknown' => __( 'No confirmation recorded', 'yoohw-advanced-notifications' ), 'unsubscribed' => __( 'Unsubscribed (excluded from sending)', 'yoohw-advanced-notifications' ) ] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $f['subscription'] ?? '', $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select></label></p><label>' . esc_html__( 'Campaign history', 'yoohw-advanced-notifications' ) . ' <select name="audience_filters[history_campaign]"><option value="">—</option>';

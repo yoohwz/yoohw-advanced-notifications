@@ -1000,7 +1000,7 @@ class YOOHW_AN_Customer_Email_Notify {
 								<select name="user_roles[]" id="user_roles" class="wc-enhanced-select" multiple="multiple" style="width: 100%;" data-placeholder="<?php esc_attr_e( 'All roles', 'yoohw-advanced-notifications' ); ?>" data-allow_clear="true">
 									<?php foreach ( wp_roles()->get_names() as $role => $label ) : ?>
 										<option value="<?php echo esc_attr( $role ); ?>" <?php selected( in_array( $role, $selected_user_roles, true ) ); ?>><?php echo esc_html( translate_user_role( $label ) ); ?></option>
-									<?php endforeach; ?>
+									<?php endforeach; $this->render_unavailable_options( $selected_user_roles, array_keys( wp_roles()->get_names() ) ); ?>
 								</select>
 								<p><?php esc_html_e( 'Match any selected role. Leave empty for all registered users, including administrators.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
