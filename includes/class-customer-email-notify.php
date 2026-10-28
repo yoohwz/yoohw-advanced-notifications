@@ -2681,7 +2681,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			? array_map( 'sanitize_key', (array) wp_unslash( $_POST['exclude_order_statuses'] ) )
 			: [];
 		$exclude_emails_raw = isset( $_POST['exclude_emails'] ) ? sanitize_textarea_field( wp_unslash( $_POST['exclude_emails'] ) ) : '';
-		$exclude_emails     = ! empty( $exclude_emails_raw ) ? $this->parse_email_list( $exclude_emails_raw ) : [];
+		$exclude_emails     = $this->parse_manual_email_list( $exclude_emails_raw );
+		if ( is_wp_error( $exclude_emails ) ) { return new WP_Error( 'invalid_excluded_emails', __( 'The exclusion list contains an invalid email address. Correct it before previewing.', 'yoohw-advanced-notifications' ) ); }
 
 		foreach ( [ 'product_ids', 'exclude_product_ids' ] as $field ) {
 			foreach ( (array) wp_unslash( $_POST[ $field ] ?? [] ) as $raw_id ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject non-digit or nonexistent IDs below before any audience lookup; never silently discard a malformed selection.

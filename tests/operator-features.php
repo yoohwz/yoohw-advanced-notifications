@@ -130,6 +130,8 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$assert( 'malformed_request_cannot_drop_filter', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => $call( 'filters_from_request' ) ] ) ) );
 		$_POST = [ 'audience_filters' => [ 'unexpected' => 'value' ] ];
 		$assert( 'unknown_request_filter_rejected', is_wp_error( $call( 'validate_audience_filters', [ 'recipient_source' => 'woocommerce_customers', 'filters' => $call( 'filters_from_request' ) ] ) ) );
+		$_POST = [ 'recipient_source' => 'manual_emails', 'manual_emails' => 'valid@example.com', 'email_subject' => 'Fixture', 'email_heading' => 'Fixture', 'email_message' => '<p>Fixture</p>', 'exclude_emails' => 'not-an-email' ];
+		$assert( 'malformed_exclusion_email_rejected', is_wp_error( $call( 'get_payload_from_request' ) ) );
 		$_POST = [];
 		$audience_option = 'yoohw_an_audience_' . wp_generate_uuid4(); $options[] = $audience_option;
 		$call( 'write_durable_option', $audience_option, [ 'id' => 'fixture', 'criteria' => [ 'recipient_source' => 'manual_emails', 'manual_emails' => [ $erased ] ] ] );
