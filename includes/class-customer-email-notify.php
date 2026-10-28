@@ -1013,6 +1013,7 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</div>
 
+						<p class="an-incompatible-help notice notice-warning inline" hidden><?php esc_html_e( 'Some selections do not apply to this recipient source. Clear the highlighted selections explicitly or choose a compatible source before previewing.', 'yoohw-advanced-notifications' ); ?></p>
 						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
 							<div class="yoohw-advanced-notifications-field">
 								<label for="recipient_source"><?php esc_html_e( 'Recipient source', 'yoohw-advanced-notifications' ); ?></label>
@@ -2760,8 +2761,14 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_invalid_schedule_mode', __( 'Please choose a valid send time option.', 'yoohw-advanced-notifications' ) );
 		}
 
-		if ( self::SOURCE_PRODUCT_CUSTOMERS !== $recipient_source ) {
-			$product_ids = [];
+		if ( self::SOURCE_PRODUCT_CUSTOMERS !== $recipient_source && $product_ids ) {
+			return new WP_Error( 'yoohw_an_incompatible_products', __( 'Selected products apply only to Product customers. Clear the products or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
+		}
+		if ( self::SOURCE_REGISTERED_USERS !== $recipient_source && isset( $_POST['user_roles'] ) && [] !== $_POST['user_roles'] && '' !== $_POST['user_roles'] ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject retained source-incompatible input before parsing; no value is used as recipient criteria.
+			return new WP_Error( 'yoohw_an_incompatible_roles', __( 'Selected roles apply only to registered users. Clear the roles or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
+		}
+		if ( self::SOURCE_MANUAL_EMAILS !== $recipient_source && isset( $_POST['manual_emails'] ) && ( ! is_string( $_POST['manual_emails'] ) || '' !== trim( wp_unslash( $_POST['manual_emails'] ) ) ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Reject malformed or nonempty incompatible raw lists before the strict email parser.
+			return new WP_Error( 'yoohw_an_incompatible_manual_list', __( 'The pasted email list applies only to Manual email list. Clear the list or choose that recipient source before previewing.', 'yoohw-advanced-notifications' ) );
 		}
 
 		$scheduled_at_timestamp = 0;

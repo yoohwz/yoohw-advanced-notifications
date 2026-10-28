@@ -32,6 +32,7 @@
 		revealApplicable('.an-order-filters', product || source === yoohwAN.customersSource);
 		revealApplicable('.an-country-filter', !manual);
 		$('#yoohw-advanced-notifications-customers-row').toggle(source === yoohwAN.customersSource);
+		$('.an-incompatible-help').prop('hidden', !$('.an-inapplicable-selection').length);
 	}
 
 	function toggleScheduleFields() {
