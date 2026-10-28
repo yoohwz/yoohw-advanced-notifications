@@ -108,31 +108,50 @@ trait YOOHW_AN_Campaign_Authoring {
 		echo '<input type="hidden" name="action" value="yoohw_an_library"><input type="hidden" name="id" value="' . esc_attr( $id ) . '"><button class="button" name="operation" value="' . esc_attr( $operation ) . '">' . esc_html( $label ) . '</button></form>';
 	}
 	private function render_duplicate_form( $id ) { $this->library_button( $id, 'duplicate', __( 'Duplicate as new draft', 'yoohw-advanced-notifications' ) ); }
+	private function render_library_page() {
+		echo '<div class="wrap yoohw-an-workspace"><h1>' . esc_html__( 'Email campaigns', 'yoohw-advanced-notifications' ) . '</h1>';
+		$this->render_page_tabs( 'library' );
+		$this->render_authoring_library();
+		echo '</div>';
+	}
 	private function render_authoring_library() {
-		echo '<details><summary>' . esc_html__( 'Drafts and saved audiences', 'yoohw-advanced-notifications' ) . '</summary>';
-		foreach ( $this->read_durable_options( 'yoohw_an_draft_' ) as $draft ) {
-			echo '<p><a href="' . esc_url( $this->get_admin_page_url( [ 'draft_id' => $draft['draft_id'] ] ) ) . '">' . esc_html( $draft['internal_name'] ?: ( $draft['subject'] ?: $draft['draft_id'] ) ) . '</a> ';
-			$this->library_button( $draft['draft_id'], 'delete_draft', __( 'Delete draft', 'yoohw-advanced-notifications' ) ); echo '</p>';
+		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Drafts', 'yoohw-advanced-notifications' ) . '</h2><p class="description">' . esc_html__( 'Drafts do not expire and never create delivery jobs.', 'yoohw-advanced-notifications' ) . '</p>';
+		$drafts = $this->read_durable_options( 'yoohw_an_draft_' );
+		if ( ! $drafts ) { echo '<p>' . esc_html__( 'No saved drafts yet.', 'yoohw-advanced-notifications' ) . '</p>'; }
+		foreach ( $drafts as $draft ) {
+			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'draft_id' => $draft['draft_id'] ] ) ) . '">' . esc_html( $draft['internal_name'] ?: ( $draft['subject'] ?: $draft['draft_id'] ) ) . '</a>';
+			$this->library_button( $draft['draft_id'], 'delete_draft', __( 'Delete draft', 'yoohw-advanced-notifications' ) );
+			echo '</div>';
 		}
-		foreach ( $this->read_durable_options( 'yoohw_an_audience_' ) as $audience ) {
-			echo '<p><a href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( $audience['name'] ) . '</a> ';
-			$this->library_button( $audience['id'], 'delete_audience', __( 'Delete audience', 'yoohw-advanced-notifications' ) ); echo '</p>';
+		echo '</section><section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Saved audience criteria', 'yoohw-advanced-notifications' ) . '</h2><p class="description">' . esc_html__( 'Reusable rules, not a frozen recipient list. A new preview is required when reused.', 'yoohw-advanced-notifications' ) . '</p>';
+		$audiences = $this->read_durable_options( 'yoohw_an_audience_' );
+		if ( ! $audiences ) { echo '<p>' . esc_html__( 'No saved audiences yet.', 'yoohw-advanced-notifications' ) . '</p>'; }
+		foreach ( $audiences as $audience ) {
+			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( $audience['name'] ) . '</a>';
+			$this->library_button( $audience['id'], 'delete_audience', __( 'Delete audience', 'yoohw-advanced-notifications' ) );
+			echo '</div>';
 		}
-		echo '</details>';
+		echo '</section>';
 	}
 	private function render_authoring_fields( $p ) {
-		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Save and reuse', 'yoohw-advanced-notifications' ) . '</h2>';
-		echo '<input type="hidden" name="draft_id" value="' . esc_attr( $p['draft_id'] ?? '' ) . '"><label>' . esc_html__( 'Internal name', 'yoohw-advanced-notifications' ) . ' <input name="internal_name" value="' . esc_attr( $p['internal_name'] ?? '' ) . '"></label> <button class="button" formnovalidate name="authoring_operation" value="save_draft">' . esc_html__( 'Save draft', 'yoohw-advanced-notifications' ) . '</button><p>' . esc_html__( 'Drafts do not expire and never create delivery jobs. A new preview is required after changes.', 'yoohw-advanced-notifications' ) . '</p>';
-		echo '<input type="hidden" name="audience_id" value="' . esc_attr( $p['audience_id'] ?? '' ) . '"><label>' . esc_html__( 'Audience name', 'yoohw-advanced-notifications' ) . ' <input name="audience_name" value="' . esc_attr( $p['audience_name'] ?? '' ) . '"></label> <button class="button" formnovalidate name="authoring_operation" value="save_audience">' . esc_html__( 'Save audience criteria', 'yoohw-advanced-notifications' ) . '</button>';
-		echo '<p><label>' . esc_html__( 'Insert editable content template', 'yoohw-advanced-notifications' ) . ' <select id="an-template"><option value="">—</option>';
+		echo '<section class="yoohw-advanced-notifications-panel an-draftbar"><input type="hidden" name="draft_id" value="' . esc_attr( $p['draft_id'] ?? '' ) . '"><label for="an-draft-name">' . esc_html__( 'Draft name (internal only)', 'yoohw-advanced-notifications' ) . '</label><input id="an-draft-name" name="internal_name" value="' . esc_attr( $p['internal_name'] ?? '' ) . '"><button class="button" formnovalidate name="authoring_operation" value="save_draft">' . esc_html__( 'Save draft', 'yoohw-advanced-notifications' ) . '</button><p class="description">' . esc_html__( 'Drafts create no delivery jobs. Changes require a new preview.', 'yoohw-advanced-notifications' ) . '</p></section>';
+	}
+	private function render_saved_audience_picker( $p ) {
+		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Saved audience criteria', 'yoohw-advanced-notifications' ) . '</h2><p>';
+		foreach ( $this->read_durable_options( 'yoohw_an_audience_' ) as $audience ) {
+			echo '<a class="button" href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( $audience['name'] ) . '</a> ';
+		}
+		echo '<a href="' . esc_url( $this->get_admin_page_url( [ 'tab' => 'library' ] ) ) . '">' . esc_html__( 'Open Library', 'yoohw-advanced-notifications' ) . '</a></p><p class="description">' . esc_html__( 'Opening saved criteria replaces this form. Save your draft first to keep current edits.', 'yoohw-advanced-notifications' ) . '</p><input type="hidden" name="audience_id" value="' . esc_attr( $p['audience_id'] ?? '' ) . '"><label>' . esc_html__( 'Audience name', 'yoohw-advanced-notifications' ) . ' <input name="audience_name" value="' . esc_attr( $p['audience_name'] ?? '' ) . '"></label> <button class="button" formnovalidate name="authoring_operation" value="save_audience">' . esc_html__( 'Save audience criteria', 'yoohw-advanced-notifications' ) . '</button></section>';
+	}
+	private function render_content_templates() {
+		echo '<section class="yoohw-advanced-notifications-panel"><label for="an-template">' . esc_html__( 'Insert editable content template', 'yoohw-advanced-notifications' ) . '</label><p><select id="an-template"><option value="">—</option>';
 		$templates = [
 			'update' => [ __( 'Product or documentation update', 'yoohw-advanced-notifications' ), __( 'An update for you', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>We have updated {product_name}. Add the details and documentation link here.</p>', 'yoohw-advanced-notifications' ) ],
 			'guide' => [ __( 'After-purchase guide', 'yoohw-advanced-notifications' ), __( 'Getting started', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>Thank you for your purchase. Add setup steps and support details here.</p>', 'yoohw-advanced-notifications' ) ],
 			'service' => [ __( 'Service or order change', 'yoohw-advanced-notifications' ), __( 'Service update', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>Add the change, effective date and any action needed here.</p>', 'yoohw-advanced-notifications' ) ],
 		];
 		foreach ( $templates as $key => $template ) { echo '<option value="' . esc_attr( $key ) . '" data-subject="' . esc_attr( $template[1] ) . '" data-body="' . esc_attr( $template[2] ) . '">' . esc_html( $template[0] ) . '</option>'; }
-		echo '</select></label></p></section>';
-		$this->render_audience_fields( $p );
+		echo '</select></p></section>';
 	}
 	private function strict_wall_timestamp( $input, $timezone ) {
 		$wall = $this->parse_scheduled_datetime( $input, new DateTimeZone( 'UTC' ) );
@@ -188,26 +207,33 @@ trait YOOHW_AN_Campaign_Authoring {
 		return $this->store_preview_payload( $p );
 	}
 	private function render_operator_preview( $p ) {
-		if ( ! empty( $_GET['audience_changed'] ) ) { echo '<p role="alert">' . esc_html__( 'Audience changed since preview. Review this updated preview and confirm again.', 'yoohw-advanced-notifications' ) . '</p>'; } // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		echo '<p>' . esc_html__( 'Schedule mode / store timezone:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( ( $p['schedule_mode'] ?? 'now' ) . ' / ' . ( $p['store_timezone'] ?? 'UTC' ) ) . '</p>';
-		$summary = $p['schedule_summary'] ?? [];
-		if ( ! empty( $summary['earliest'] ) ) { echo '<p>' . esc_html__( 'UTC fallback count / earliest and latest planned send (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $summary['fallback'] . ' / ' . gmdate( 'Y-m-d H:i', $summary['earliest'] ) . ' — ' . gmdate( 'Y-m-d H:i', $summary['latest'] ) ) . '</p>'; }
-		echo '<p>' . esc_html__( 'Selected / excluded:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( ( $p['recipient_count'] ?? 0 ) . ' / ' . ( $p['excluded_count'] ?? 0 ) ) . '</p>';
+		if ( ! empty( $_GET['audience_changed'] ) ) { echo '<p class="notice notice-warning" role="alert">' . esc_html__( 'Audience changed since preview. Review this updated preview and confirm again.', 'yoohw-advanced-notifications' ) . '</p>'; } // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Recipients and schedule to confirm', 'yoohw-advanced-notifications' ) . '</h2><dl class="an-preview-counts"><div><dt>' . esc_html__( 'Selected', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( number_format_i18n( $p['recipient_count'] ?? 0 ) ) . '</dd></div><div><dt>' . esc_html__( 'Excluded', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( number_format_i18n( $p['excluded_count'] ?? 0 ) ) . '</dd></div></dl>';
 		$reason_labels = [ 'order_conditions' => __( 'Removed by order conditions', 'yoohw-advanced-notifications' ), 'subscription_or_history' => __( 'Removed by subscription or campaign history', 'yoohw-advanced-notifications' ), 'explicit_exclusions_or_suppression' => __( 'Removed by exclusions or suppression', 'yoohw-advanced-notifications' ) ];
-		foreach ( $p['audience_audit'] ?? [] as $reason => $count ) { echo '<p>' . esc_html( ( $reason_labels[ $reason ] ?? $reason ) . ': ' . $count ) . '</p>'; }
+		echo '<dl class="an-review-facts">';
+		foreach ( $p['audience_audit'] ?? [] as $reason => $count ) { echo '<div><dt>' . esc_html( $reason_labels[ $reason ] ?? $reason ) . '</dt><dd>' . esc_html( number_format_i18n( $count ) ) . '</dd></div>'; }
+		$mode_labels = [ 'now' => __( 'After confirmation', 'yoohw-advanced-notifications' ), 'store' => __( 'One time in store timezone', 'yoohw-advanced-notifications' ), 'local' => __( 'Same local time per recipient (location estimate; UTC fallback)', 'yoohw-advanced-notifications' ), 'scheduled' => __( 'Legacy schedule', 'yoohw-advanced-notifications' ) ];
+		echo '<div><dt>' . esc_html__( 'Schedule mode / store timezone', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( ( $mode_labels[ $p['schedule_mode'] ?? 'now' ] ?? $p['schedule_mode'] ) . ' / ' . ( $p['store_timezone'] ?? 'UTC' ) ) . '</dd></div>';
+		$summary = $p['schedule_summary'] ?? [];
+		if ( ! empty( $summary['earliest'] ) ) {
+			echo '<div><dt>' . esc_html__( 'UTC fallback count', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( number_format_i18n( $summary['fallback'] ) ) . '</dd></div><div><dt>' . esc_html__( 'Earliest and latest due (UTC)', 'yoohw-advanced-notifications' ) . '</dt><dd>' . esc_html( gmdate( 'Y-m-d H:i', $summary['earliest'] ) . ' — ' . gmdate( 'Y-m-d H:i', $summary['latest'] ) ) . '</dd></div>';
+		}
+		echo '</dl><details><summary>' . esc_html__( 'Saved audience conditions', 'yoohw-advanced-notifications' ) . '</summary>';
 		$this->render_audience_summary( $p );
+		echo '</details></section><section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Inspect an address', 'yoohw-advanced-notifications' ) . '</h2>';
 		$this->render_audience_inspector( $p );
+		echo '</section>';
 		$sample = $p['recipient_sample'][0] ?? null;
 		if ( $sample ) {
-			$index = absint( $_GET['sample_index'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$index = absint( $_GET['sample_index'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sample selection.
 			$sample = $p['recipient_sample'][ $index ] ?? $sample;
-			echo '<p>' . esc_html__( 'Personalized sample:', 'yoohw-advanced-notifications' ) . ' ';
-			foreach ( $p['recipient_sample'] as $i => $recipient ) { echo '<a href="' . esc_url( add_query_arg( 'sample_index', $i ) ) . '">' . esc_html( $recipient['email'] ) . '</a> '; }
-			echo '</p><label>' . esc_html__( 'Preview width', 'yoohw-advanced-notifications' ) . ' <select class="an-preview-width"><option value="100%">' . esc_html__( 'Desktop', 'yoohw-advanced-notifications' ) . '</option><option value="375px">' . esc_html__( 'Mobile', 'yoohw-advanced-notifications' ) . '</option></select></label>';
+			echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Personalized email preview', 'yoohw-advanced-notifications' ) . '</h2><form class="an-filter-form" method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="preview_token" value="' . esc_attr( sanitize_key( wp_unslash( $_GET['preview_token'] ?? '' ) ) ) . '"><label for="an-sample-index">' . esc_html__( 'Sample recipient (up to 20)', 'yoohw-advanced-notifications' ) . '</label><select id="an-sample-index" name="sample_index">'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sample form.
+			foreach ( $p['recipient_sample'] as $i => $recipient ) { echo '<option value="' . esc_attr( $i ) . '" ' . selected( $sample['email'], $recipient['email'], false ) . '>' . esc_html( $recipient['email'] ) . '</option>'; }
+			echo '</select><button class="button">' . esc_html__( 'Show sample', 'yoohw-advanced-notifications' ) . '</button></form><p><label for="an-personal-width">' . esc_html__( 'Preview width', 'yoohw-advanced-notifications' ) . '</label> <select id="an-personal-width" class="an-preview-width"><option value="100%">' . esc_html__( 'Desktop', 'yoohw-advanced-notifications' ) . '</option><option value="375px">' . esc_html__( 'Mobile', 'yoohw-advanced-notifications' ) . '</option></select></p>';
 			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $sample['name'] ?: $sample['email'], $p['products_label'] ?? '' ], $p['message'] );
 			$message = $this->append_unsubscribe_footer( $message, $sample['email'], $p['campaign_id'] );
 			$html = $this->build_woocommerce_email_body( $p['heading'], $message );
-			echo '<iframe class="an-personal-preview" sandbox="" title="' . esc_attr__( 'Personalized email preview', 'yoohw-advanced-notifications' ) . '" srcdoc="' . esc_attr( $html ) . '"></iframe>';
+			echo '<iframe class="an-personal-preview" sandbox="" title="' . esc_attr__( 'Personalized email preview', 'yoohw-advanced-notifications' ) . '" srcdoc="' . esc_attr( $html ) . '"></iframe></section>';
 		}
 	}
 }

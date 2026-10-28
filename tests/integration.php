@@ -255,12 +255,17 @@ try {
 	ob_start();
 	$notify->render_page();
 	$html = ob_get_clean();
-	$assert( 'campaign_form_omits_removed_features', false !== strpos( $html, 'Campaigns &amp; Logs' ) && false !== strpos( $html, 'Subscription status' ) && false === stripos( $html, 'audience-sync' ) );
-	foreach ( [ 'campaigns', 'settings' ] as $tab ) {
+	$assert( 'campaign_form_omits_removed_features', 1 === preg_match( '/>\s*Campaigns\s*<\/a>/', $html ) && false !== strpos( $html, 'Subscription status' ) && false === stripos( $html, 'audience-sync' ) );
+	$assert( 'compose_keeps_single_draft_and_existing_post_authority', 1 === substr_count( $html, 'name="draft_id"' ) && 1 === substr_count( $html, 'name="internal_name"' ) && false !== strpos( $html, 'yoohw_an_send_product_customer_email_nonce' ) && false !== strpos( $html, 'wp-email_message-wrap' ) );
+	$assert( 'compose_has_four_progressive_steps', 4 === substr_count( $html, 'data-an-panel=' ) && false === strpos( $html, 'data-an-panel="audience" hidden' ) && false === strpos( $html, 'data-an-panel="content" hidden' ) && false !== strpos( $html, 'id="yoohw-advanced-notifications-primary-action"' ) );
+	foreach ( [ 'campaigns', 'library', 'subscribers', 'settings' ] as $tab ) {
 		$_GET['tab'] = $tab;
 		ob_start();
 		$notify->render_page();
-		$assert( $tab . '_tab_renders', strlen( ob_get_clean() ) > 500 );
+		$tab_html = ob_get_clean();
+		$assert( $tab . '_tab_renders', strlen( $tab_html ) > 500 );
+		if ( 'settings' === $tab ) { $assert( 'settings_separates_subscriber_mutations', false === strpos( $tab_html, 'value="preview_import"' ) && false !== strpos( $tab_html, 'name="retention_days"' ) && false !== strpos( $tab_html, 'export-personal-data.php' ) ); }
+		if ( 'subscribers' === $tab ) { $assert( 'subscribers_keep_preview_apply_nonce_authority', false !== strpos( $tab_html, 'value="preview_import"' ) && false !== strpos( $tab_html, 'name="evidence_source"' ) && false !== strpos( $tab_html, 'name="_wpnonce"' ) && false === strpos( $tab_html, 'name="retention_days"' ) ); }
 	}
 } catch ( Throwable $error ) {
 	$checks['unexpected_exception'] = false;

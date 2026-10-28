@@ -120,6 +120,7 @@ trait YOOHW_AN_Campaign_Controls {
 	private function render_campaign_controls( $campaign ) {
 		$id = $campaign['campaign_id'];
 		$control = $this->campaign_control( $id );
+		echo '<section class="yoohw-advanced-notifications-panel">';
 		if ( ! empty( $campaign['internal_name'] ) ) { echo '<h2>' . esc_html( $campaign['internal_name'] ) . '</h2>'; }
 		echo '<p>' . esc_html__( 'Pause/Cancel cannot recall mail already handed to the mail system. Workers admitted before the change may finish.', 'yoohw-advanced-notifications' ) . '</p>';
 		if ( ! empty( $_GET['control_saved'] ) ) { echo '<p role="status">' . esc_html__( 'Campaign control saved.', 'yoohw-advanced-notifications' ) . '</p>'; } // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -129,24 +130,47 @@ trait YOOHW_AN_Campaign_Controls {
 			wp_nonce_field( 'yoohw_an_control' );
 			echo '<input type="hidden" name="action" value="yoohw_an_control"><input type="hidden" name="campaign_id" value="' . esc_attr( $id ) . '"><button class="button" name="operation" value="' . esc_attr( $operation ) . '">' . esc_html( $label ) . '</button></form> ';
 		}
+		$counts = $this->sanitize_count_map( $campaign['tracking_counts'] ?? $campaign['status_counts'] ?? [] );
+		if ( empty( $campaign['tracking_counts'] ) ) {
+			foreach ( [ 'sent', 'queued', 'scheduled' ] as $status ) { $counts[ $status ] = max( $counts[ $status ] ?? 0, absint( $campaign[ $status . '_count' ] ?? 0 ) ); }
+		}
+		$groups = [
+			__( 'Handed to mail system', 'yoohw-advanced-notifications' ) => [ 'sent' ],
+			__( 'Pending', 'yoohw-advanced-notifications' ) => [ 'dispatch_pending', 'queued', 'scheduled', 'paused_wait', 'rate_wait' ],
+			__( 'Processing', 'yoohw-advanced-notifications' ) => [ 'processing' ],
+			__( 'Failed', 'yoohw-advanced-notifications' ) => [ 'failed', 'queue_failed', 'schedule_failed' ],
+			__( 'Skipped / cancelled', 'yoohw-advanced-notifications' ) => [ 'skipped', 'skipped_unsubscribed', 'skipped_duplicate', 'cancelled' ],
+			__( 'Unknown', 'yoohw-advanced-notifications' ) => [ 'unknown' ],
+		];
+		echo '<dl class="an-delivery-stats">';
+		foreach ( $groups as $label => $statuses ) {
+			$total = 0;
+			foreach ( $statuses as $status ) { $total += $counts[ $status ] ?? 0; }
+			echo '<div><dt>' . esc_html( $label ) . '</dt><dd>' . esc_html( number_format_i18n( $total ) ) . '</dd></div>';
+		}
+		echo '</dl><p class="description">' . esc_html__( 'Handed off does not verify inbox delivery. Unknown outcomes are never retried automatically. Retry only eligible known failures after correcting the reported problem.', 'yoohw-advanced-notifications' ) . '</p>';
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- Live diagnostic timestamps must reflect other workers.
 		$last = $wpdb->get_var( $wpdb->prepare( "SELECT MAX(updated_at) FROM %i WHERE campaign_id = %s AND status IN ('sent','failed','unknown','processing','skipped_unsubscribed')", $this->get_recipient_tracking_table_name(), $id ) );
 		echo '<p>' . esc_html__( 'Latest recipient progress (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $last ?: '—' ) . '</p>';
+		echo '<p><strong>' . esc_html__( 'Next action:', 'yoohw-advanced-notifications' ) . '</strong> ' . esc_html( ! empty( $control['cancelled'] ) || ! empty( $campaign['cancelled'] ) ? __( 'No new claims. In-flight outcomes may still finish and reconcile.', 'yoohw-advanced-notifications' ) : ( ! empty( $control['paused'] ) ? __( 'Resume to continue the same saved campaign.', 'yoohw-advanced-notifications' ) : __( 'Eligible saved work continues through the queue. Inspect Scheduled Actions if progress stops.', 'yoohw-advanced-notifications' ) ) ) . '</p>';
 		if ( ! empty( $control['paused'] ) ) { echo '<p>' . esc_html__( 'Paused. Resume continues the same recipients, attempts and original due times.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		if ( ( $control['rate_resume_at'] ?? 0 ) > time() ) { echo '<p>' . esc_html__( 'Site sending limit: next admission check (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( gmdate( 'Y-m-d H:i:s', $control['rate_resume_at'] ) ) . '</p>'; }
 		echo '<p>' . esc_html__( 'Pending delivery jobs:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( (string) ( $campaign['pending_action_count'] ?? 0 ) ) . ' — ' . esc_html__( 'Last reconciliation:', 'yoohw-advanced-notifications' ) . ' ' . esc_html( ! empty( $campaign['reconciled_at'] ) ? gmdate( 'Y-m-d H:i:s', $campaign['reconciled_at'] ) . ' UTC' : '—' ) . '</p>';
 		echo '<a class="button" href="' . esc_url( admin_url( 'tools.php?page=action-scheduler&s=' . rawurlencode( $id ) ) ) . '">' . esc_html__( 'Inspect Scheduled Actions', 'yoohw-advanced-notifications' ) . '</a>';
+		echo '</section><details class="yoohw-advanced-notifications-panel"><summary>' . esc_html__( 'Saved audience and schedule', 'yoohw-advanced-notifications' ) . '</summary>';
 		$this->render_audience_summary( $campaign );
 		$summary = $campaign['schedule_summary'] ?? [];
 		if ( ! empty( $summary['earliest'] ) ) { echo '<p>' . esc_html__( 'Confirmed fallback count / earliest and latest due (UTC):', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $summary['fallback'] . ' / ' . gmdate( 'Y-m-d H:i:s', $summary['earliest'] ) . ' — ' . gmdate( 'Y-m-d H:i:s', $summary['latest'] ) ) . '</p>'; }
+		echo '</details>';
 		$this->render_recipient_diagnostics( $id );
+		echo '<dialog id="an-cancel-dialog" aria-labelledby="an-cancel-title" aria-describedby="an-cancel-description"><h2 id="an-cancel-title">' . esc_html__( 'Cancel remaining deliveries?', 'yoohw-advanced-notifications' ) . '</h2><div id="an-cancel-description"><p>' . esc_html__( 'This stops new claims permanently. This campaign cannot be resumed after cancellation.', 'yoohw-advanced-notifications' ) . '</p><p>' . esc_html__( 'Emails already handed to the mail system cannot be recalled. Already claimed workers may finish; unknown outcomes remain unknown. Campaign history and opt-outs are retained.', 'yoohw-advanced-notifications' ) . '</p></div><div class="an-dialog-actions"><button type="button" class="button" data-an-dismiss>' . esc_html__( 'Go back', 'yoohw-advanced-notifications' ) . '</button><button type="button" class="button button-primary" data-an-confirm-cancel>' . esc_html__( 'Cancel remaining', 'yoohw-advanced-notifications' ) . '</button></div></dialog>';
 	}
 	private function render_recipient_diagnostics( $id ) {
 		$search = sanitize_text_field( wp_unslash( $_GET['recipient_search'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$status = sanitize_key( wp_unslash( $_GET['recipient_status'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		echo '<form method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="tab" value="campaigns"><input type="hidden" name="view" value="logs"><input type="hidden" name="campaign_id" value="' . esc_attr( $id ) . '"><input name="recipient_search" aria-label="' . esc_attr__( 'Find email or reason', 'yoohw-advanced-notifications' ) . '" value="' . esc_attr( $search ) . '"><select name="recipient_status">';
-		foreach ( [ '' => __( 'All recipient states', 'yoohw-advanced-notifications' ), 'dispatch_pending' => __( 'Waiting', 'yoohw-advanced-notifications' ), 'paused_wait' => __( 'Paused', 'yoohw-advanced-notifications' ), 'rate_wait' => __( 'Rate limited', 'yoohw-advanced-notifications' ), 'processing' => __( 'Processing', 'yoohw-advanced-notifications' ), 'sent' => __( 'Handed to mail system', 'yoohw-advanced-notifications' ), 'failed' => __( 'Failed', 'yoohw-advanced-notifications' ), 'queue_failed' => __( 'Queue failed', 'yoohw-advanced-notifications' ), 'unknown' => __( 'Unknown', 'yoohw-advanced-notifications' ), 'skipped_unsubscribed' => __( 'Unsubscribed', 'yoohw-advanced-notifications' ), 'cancelled' => __( 'Cancelled', 'yoohw-advanced-notifications' ) ] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $status, $key, false ) . '>' . esc_html( $label ) . '</option>'; }
+		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Recipients', 'yoohw-advanced-notifications' ) . '</h2><form class="an-filter-form" method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="tab" value="campaigns"><input type="hidden" name="view" value="logs"><input type="hidden" name="campaign_id" value="' . esc_attr( $id ) . '"><input name="recipient_search" aria-label="' . esc_attr__( 'Find email or reason', 'yoohw-advanced-notifications' ) . '" value="' . esc_attr( $search ) . '"><select name="recipient_status" aria-label="' . esc_attr__( 'Recipient status', 'yoohw-advanced-notifications' ) . '">';
+		foreach ( [ '' => __( 'All recipient states', 'yoohw-advanced-notifications' ), 'queued' => __( 'Queued', 'yoohw-advanced-notifications' ), 'scheduled' => __( 'Scheduled', 'yoohw-advanced-notifications' ), 'schedule_failed' => __( 'Schedule failed', 'yoohw-advanced-notifications' ), 'dispatch_pending' => __( 'Waiting', 'yoohw-advanced-notifications' ), 'paused_wait' => __( 'Paused', 'yoohw-advanced-notifications' ), 'rate_wait' => __( 'Rate limited', 'yoohw-advanced-notifications' ), 'processing' => __( 'Processing', 'yoohw-advanced-notifications' ), 'sent' => __( 'Handed to mail system', 'yoohw-advanced-notifications' ), 'failed' => __( 'Failed', 'yoohw-advanced-notifications' ), 'queue_failed' => __( 'Queue failed', 'yoohw-advanced-notifications' ), 'unknown' => __( 'Unknown', 'yoohw-advanced-notifications' ), 'skipped_unsubscribed' => __( 'Unsubscribed', 'yoohw-advanced-notifications' ), 'cancelled' => __( 'Cancelled', 'yoohw-advanced-notifications' ) ] as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( $status, $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select><button class="button">' . esc_html__( 'Filter recipients', 'yoohw-advanced-notifications' ) . '</button></form>';
 		global $wpdb;
 		$like = '%' . $wpdb->esc_like( $search ) . '%';
@@ -154,6 +178,7 @@ trait YOOHW_AN_Campaign_Controls {
 		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT email,status,attempts,last_error,scheduled_at_gmt FROM %i WHERE campaign_id = %s AND (%s = '' OR status = %s) AND (email LIKE %s OR last_error LIKE %s) ORDER BY id LIMIT 200", $this->get_recipient_tracking_table_name(), $id, $status, $status, $like, $like ), ARRAY_A );
 		echo '<p>' . esc_html__( 'Up to 200 matching recipients. Original due times below are UTC; pauses, queue delays and limits may delay actual handoff.', 'yoohw-advanced-notifications' ) . '</p><table class="widefat striped"><tr><th>' . esc_html__( 'Email', 'yoohw-advanced-notifications' ) . '</th><th>' . esc_html__( 'State / attempts', 'yoohw-advanced-notifications' ) . '</th><th>' . esc_html__( 'Original due / reason', 'yoohw-advanced-notifications' ) . '</th></tr>';
 		foreach ( $rows as $row ) { echo '<tr><td>' . esc_html( $row['email'] ) . '</td><td>' . esc_html( $row['status'] . ' / ' . $row['attempts'] ) . '</td><td>' . esc_html( $row['scheduled_at_gmt'] . ' — ' . $row['last_error'] ) . '</td></tr>'; }
-		echo '</table>';
+		if ( ! $rows ) { echo '<tr><td colspan="3">' . esc_html__( 'No matching recipients.', 'yoohw-advanced-notifications' ) . '</td></tr>'; }
+		echo '</table></section>';
 	}
 }

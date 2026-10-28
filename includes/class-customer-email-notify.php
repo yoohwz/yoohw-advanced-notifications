@@ -780,6 +780,15 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'campaign'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed.
 
+		if ( 'library' === $active_tab ) {
+			$this->render_library_page();
+			return;
+		}
+		if ( 'subscribers' === $active_tab ) {
+			$this->render_subscribers_page();
+			return;
+		}
+
 		if ( 'settings' === $active_tab ) {
 			$this->render_settings_page();
 			return;
@@ -834,10 +843,10 @@ class YOOHW_AN_Customer_Email_Notify {
 			: get_option( 'admin_email' );
 		?>
 
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
-			<?php $this->render_page_tabs( 'campaign' ); $this->render_authoring_library(); ?>
+			<?php $this->render_page_tabs( 'campaign' ); ?>
 
 			<?php if ( isset( $_GET['preview_expired'] ) ) : /* phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed. */ ?>
 				<div class="notice notice-error is-dismissible">
@@ -987,9 +996,15 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				<?php wp_nonce_field( 'yoohw_an_send_product_customer_email_action', 'yoohw_an_send_product_customer_email_nonce' ); ?>
 
-				<div class="yoohw-advanced-notifications-campaign-grid">
-					<div class="yoohw-advanced-notifications-campaign-main">
-						<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
+				<?php $this->render_authoring_fields( $restore_payload ); ?>
+				<nav class="an-compose-steps" aria-label="<?php esc_attr_e( 'Compose steps', 'yoohw-advanced-notifications' ); ?>">
+					<?php foreach ( [ 'audience' => __( '1. Audience', 'yoohw-advanced-notifications' ), 'content' => __( '2. Content', 'yoohw-advanced-notifications' ), 'schedule' => __( '3. Schedule', 'yoohw-advanced-notifications' ), 'review' => __( '4. Review', 'yoohw-advanced-notifications' ) ] as $step => $label ) : ?>
+						<a href="#an-step-<?php echo esc_attr( $step ); ?>" data-an-step="<?php echo esc_attr( $step ); ?>"><?php echo esc_html( $label ); ?></a>
+					<?php endforeach; ?>
+				</nav>
+				<div id="an-step-audience" class="an-compose-step" data-an-panel="audience">
+					<?php $this->render_saved_audience_picker( $restore_payload ); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
 						<div class="yoohw-advanced-notifications-panel-header">
 							<span class="yoohw-advanced-notifications-step">1</span>
 							<div>
@@ -1043,47 +1058,8 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</div>
 					</section>
-
-					<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
-						<div class="yoohw-advanced-notifications-panel-header">
-							<span class="yoohw-advanced-notifications-step">2</span>
-							<div>
-								<h2><?php esc_html_e( 'Message', 'yoohw-advanced-notifications' ); ?></h2>
-								<p><?php esc_html_e( 'Compose the email shown inside the WooCommerce template.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-						</div>
-
-						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
-							<div class="yoohw-advanced-notifications-field">
-								<label for="email_subject"><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></label>
-								<input type="text" name="email_subject" id="email_subject" class="regular-text" value="<?php echo esc_attr( $selected_subject ); ?>" required>
-							</div>
-
-							<div class="yoohw-advanced-notifications-field">
-								<label for="email_heading"><?php esc_html_e( 'Email heading', 'yoohw-advanced-notifications' ); ?></label>
-								<input type="text" name="email_heading" id="email_heading" class="regular-text" value="<?php echo esc_attr( $selected_heading ); ?>" required>
-							</div>
-
-							<div class="yoohw-advanced-notifications-field yoohw-advanced-notifications-field-full">
-								<label for="email_message"><?php esc_html_e( 'Message body', 'yoohw-advanced-notifications' ); ?></label>
-								<?php
-								wp_editor(
-									$selected_message,
-									'email_message',
-									[
-										'textarea_name' => 'email_message',
-										'textarea_rows' => 10,
-										'media_buttons' => true,
-									]
-								);
-								?>
-								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Body variables: {customer_name} uses the saved recipient name, falling back to email; {product_name} is the shared campaign product label, never a personal purchase. With no product selection it uses the audience label. Subject and heading are literal.', 'yoohw-advanced-notifications' ); ?></p>
-								<p><?php esc_html_e( 'An unsubscribe link is added automatically to campaign emails.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-						</div>
-					</section>
-
-					<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
+					<?php $this->render_audience_fields( $restore_payload ); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
 						<details class="yoohw-advanced-notifications-details">
 							<summary>
 								<span><?php esc_html_e( 'Exclusions', 'yoohw-advanced-notifications' ); ?></span>
@@ -1139,12 +1115,106 @@ class YOOHW_AN_Customer_Email_Notify {
 							</div>
 						</details>
 					</section>
+				</div>
+				<div id="an-step-content" class="an-compose-step" data-an-panel="content">
+					<div class="yoohw-advanced-notifications-campaign-grid"><div class="yoohw-advanced-notifications-campaign-main">
+					<?php $this->render_content_templates(); ?>
+<section class="yoohw-advanced-notifications-panel yoohw-advanced-notifications-panel-wide">
+						<div class="yoohw-advanced-notifications-panel-header">
+							<span class="yoohw-advanced-notifications-step">2</span>
+							<div>
+								<h2><?php esc_html_e( 'Content', 'yoohw-advanced-notifications' ); ?></h2>
+								<p><?php esc_html_e( 'Compose the email shown inside the WooCommerce template.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
+						</div>
 
-					<section class="yoohw-advanced-notifications-panel">
+						<div class="yoohw-advanced-notifications-fields yoohw-advanced-notifications-fields-2">
+							<div class="yoohw-advanced-notifications-field">
+								<label for="email_subject"><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></label>
+								<input type="text" name="email_subject" id="email_subject" class="regular-text" value="<?php echo esc_attr( $selected_subject ); ?>" required>
+							</div>
+
+							<div class="yoohw-advanced-notifications-field">
+								<label for="email_heading"><?php esc_html_e( 'Email heading', 'yoohw-advanced-notifications' ); ?></label>
+								<input type="text" name="email_heading" id="email_heading" class="regular-text" value="<?php echo esc_attr( $selected_heading ); ?>" required>
+							</div>
+
+							<div class="yoohw-advanced-notifications-field yoohw-advanced-notifications-field-full">
+								<label for="email_message"><?php esc_html_e( 'Message body', 'yoohw-advanced-notifications' ); ?></label>
+								<?php
+								wp_editor(
+									$selected_message,
+									'email_message',
+									[
+										'textarea_name' => 'email_message',
+										'textarea_rows' => 10,
+										'media_buttons' => true,
+									]
+								);
+								?>
+								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Body variables: {customer_name} uses the saved recipient name, falling back to email; {product_name} is the shared campaign product label, never a personal purchase. With no product selection it uses the audience label. Subject and heading are literal.', 'yoohw-advanced-notifications' ); ?></p>
+								<p><?php esc_html_e( 'An unsubscribe link is added automatically to campaign emails.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
+						</div>
+					</section>
+<section class="yoohw-advanced-notifications-panel">
+						<div class="yoohw-advanced-notifications-panel-header">
+							<span class="yoohw-advanced-notifications-step">2</span>
+							<div>
+								<h2><?php esc_html_e( 'Test', 'yoohw-advanced-notifications' ); ?></h2>
+								<p><?php esc_html_e( 'Send a single email without building the campaign queue.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
+						</div>
+
+						<label class="yoohw-advanced-notifications-choice">
+							<input type="checkbox" name="test_mode" id="test_mode" value="1" <?php checked( $selected_test_mode ); ?>>
+							<span>
+								<strong><?php esc_html_e( 'Enable test mode', 'yoohw-advanced-notifications' ); ?></strong>
+								<small><?php esc_html_e( 'Only the test recipient will receive this email.', 'yoohw-advanced-notifications' ); ?></small>
+							</span>
+						</label>
+
+						<div id="yoohw-advanced-notifications-test-email-row" class="yoohw-advanced-notifications-field yoohw-advanced-notifications-test-email-field">
+							<label for="test_email"><?php esc_html_e( 'Test email address', 'yoohw-advanced-notifications' ); ?></label>
+							<input
+								type="email"
+								name="test_email"
+								id="test_email"
+								class="regular-text"
+								value="<?php echo esc_attr( $selected_test_email ); ?>"
+							>
+							</div>
+						<p><button class="button an-test-submit" type="submit" hidden><?php esc_html_e( 'Send Test Email', 'yoohw-advanced-notifications' ); ?></button></p>
+</section>
+</div><aside class="yoohw-advanced-notifications-preview-panel" aria-label="<?php esc_attr_e( 'Email preview', 'yoohw-advanced-notifications' ); ?>">
+						<div class="yoohw-advanced-notifications-preview-header">
+							<div>
+								<h2><?php esc_html_e( 'Email preview', 'yoohw-advanced-notifications' ); ?></h2>
+								<p><?php esc_html_e( 'Rendered with the active WooCommerce email template.', 'yoohw-advanced-notifications' ); ?></p>
+							</div>
+							<span><?php esc_html_e( 'Live', 'yoohw-advanced-notifications' ); ?></span>
+						</div>
+
+						<p><label for="an-compose-width"><?php esc_html_e( 'Preview width', 'yoohw-advanced-notifications' ); ?> <select id="an-compose-width" class="an-preview-width"><option value="100%"><?php esc_html_e( 'Desktop', 'yoohw-advanced-notifications' ); ?></option><option value="375px"><?php esc_html_e( 'Mobile', 'yoohw-advanced-notifications' ); ?></option></select></label></p>
+<div class="yoohw-advanced-notifications-preview-subject">
+							<strong><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></strong>
+							<span id="yoohw-advanced-notifications-preview-subject"><?php esc_html_e( 'Email subject', 'yoohw-advanced-notifications' ); ?></span>
+						</div>
+
+						<textarea id="yoohw-advanced-notifications-preview-template-source" hidden readonly><?php echo esc_textarea( $this->get_campaign_preview_email_html() ); ?></textarea>
+						<iframe
+							id="yoohw-advanced-notifications-preview-frame"
+							class="yoohw-advanced-notifications-preview-frame"
+							title="<?php esc_attr_e( 'WooCommerce email preview', 'yoohw-advanced-notifications' ); ?>">
+						</iframe>
+					</aside>
+</div></div>
+				<div id="an-step-schedule" class="an-compose-step" data-an-panel="schedule">
+<section class="yoohw-advanced-notifications-panel">
 						<div class="yoohw-advanced-notifications-panel-header">
 							<span class="yoohw-advanced-notifications-step">3</span>
 							<div>
-								<h2><?php esc_html_e( 'Delivery', 'yoohw-advanced-notifications' ); ?></h2>
+								<h2><?php esc_html_e( 'Schedule', 'yoohw-advanced-notifications' ); ?></h2>
 								<p><?php esc_html_e( 'Choose when the campaign should be sent.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
 						</div>
@@ -1179,62 +1249,15 @@ class YOOHW_AN_Customer_Email_Notify {
 							<p><?php esc_html_e( 'Store mode uses the displayed store timezone. Local mode uses a billing-location estimate only when unambiguous, otherwise UTC. Past, nonexistent or repeated local times are rejected; choose another time. No automatic next-day rollover.', 'yoohw-advanced-notifications' ); ?></p>
 						</div>
 					</section>
-
+</div>
+				<div id="an-step-review" class="an-compose-step" data-an-panel="review">
 					<section class="yoohw-advanced-notifications-panel">
-						<div class="yoohw-advanced-notifications-panel-header">
-							<span class="yoohw-advanced-notifications-step">4</span>
-							<div>
-								<h2><?php esc_html_e( 'Test', 'yoohw-advanced-notifications' ); ?></h2>
-								<p><?php esc_html_e( 'Send a single email without building the campaign queue.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-						</div>
-
-						<label class="yoohw-advanced-notifications-choice">
-							<input type="checkbox" name="test_mode" id="test_mode" value="1" <?php checked( $selected_test_mode ); ?>>
-							<span>
-								<strong><?php esc_html_e( 'Enable test mode', 'yoohw-advanced-notifications' ); ?></strong>
-								<small><?php esc_html_e( 'Only the test recipient will receive this email.', 'yoohw-advanced-notifications' ); ?></small>
-							</span>
-						</label>
-
-						<div id="yoohw-advanced-notifications-test-email-row" class="yoohw-advanced-notifications-field yoohw-advanced-notifications-test-email-field">
-							<label for="test_email"><?php esc_html_e( 'Test email address', 'yoohw-advanced-notifications' ); ?></label>
-							<input
-								type="email"
-								name="test_email"
-								id="test_email"
-								class="regular-text"
-								value="<?php echo esc_attr( $selected_test_email ); ?>"
-							>
-							</div>
-						</section>
-					</div>
-
-					<aside class="yoohw-advanced-notifications-preview-panel" aria-label="<?php esc_attr_e( 'Email preview', 'yoohw-advanced-notifications' ); ?>">
-						<div class="yoohw-advanced-notifications-preview-header">
-							<div>
-								<h2><?php esc_html_e( 'Email preview', 'yoohw-advanced-notifications' ); ?></h2>
-								<p><?php esc_html_e( 'Rendered with the active WooCommerce email template.', 'yoohw-advanced-notifications' ); ?></p>
-							</div>
-							<span><?php esc_html_e( 'Live', 'yoohw-advanced-notifications' ); ?></span>
-						</div>
-
-						<div class="yoohw-advanced-notifications-preview-subject">
-							<strong><?php esc_html_e( 'Subject', 'yoohw-advanced-notifications' ); ?></strong>
-							<span id="yoohw-advanced-notifications-preview-subject"><?php esc_html_e( 'Email subject', 'yoohw-advanced-notifications' ); ?></span>
-						</div>
-
-						<textarea id="yoohw-advanced-notifications-preview-template-source" hidden readonly><?php echo esc_textarea( $this->get_campaign_preview_email_html() ); ?></textarea>
-						<iframe
-							id="yoohw-advanced-notifications-preview-frame"
-							class="yoohw-advanced-notifications-preview-frame"
-							title="<?php esc_attr_e( 'WooCommerce email preview', 'yoohw-advanced-notifications' ); ?>">
-						</iframe>
-					</aside>
-				</div>
-
-				<?php $this->render_authoring_fields( $restore_payload ); ?>
-				<div class="yoohw-advanced-notifications-actions">
+						<h2><?php esc_html_e( 'Review before confirmation', 'yoohw-advanced-notifications' ); ?></h2>
+						<p><?php esc_html_e( 'Preview Recipients opens the saved recipient preview with selected and excluded counts, reasons, personalized samples and confirmed due times. No audience estimate is calculated while you edit.', 'yoohw-advanced-notifications' ); ?></p>
+						<p><?php esc_html_e( 'Review that preview, then confirm there. Changes require another preview. Emails already handed to the mail system cannot be recalled; inbox delivery is not verified.', 'yoohw-advanced-notifications' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Test mode sends only to the test address. Turn it off in Content to preview a campaign audience.', 'yoohw-advanced-notifications' ); ?></p>
+					</section>
+<div class="yoohw-advanced-notifications-actions">
 					<span
 						id="yoohw-advanced-notifications-action-help"
 						data-campaign-text="<?php esc_attr_e( 'Next step: preview recipients and confirm before sending.', 'yoohw-advanced-notifications' ); ?>"
@@ -1255,6 +1278,11 @@ class YOOHW_AN_Customer_Email_Notify {
 					);
 					?>
 				</div>
+</div>
+				<div class="an-step-controls" hidden>
+					<button type="button" class="button" data-an-previous><?php esc_html_e( 'Back', 'yoohw-advanced-notifications' ); ?></button>
+					<button type="button" class="button button-primary" data-an-next><?php esc_html_e( 'Continue', 'yoohw-advanced-notifications' ); ?></button>
+				</div>
 			</form>
 		</div>
 
@@ -1263,24 +1291,18 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function render_page_tabs( $active_tab ) {
 		$tabs = [
-			'campaign' => [
-				'label' => __( 'Campaign', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url(),
-			],
-			'campaigns' => [
-				'label' => __( 'Campaigns & Logs', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url( [ 'tab' => 'campaigns' ] ),
-			],
-			'settings' => [
-				'label' => __( 'Settings', 'yoohw-advanced-notifications' ),
-				'url'   => $this->get_admin_page_url( [ 'tab' => 'settings' ] ),
-			],
+			'campaigns' => [ 'label' => __( 'Campaigns', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'campaigns' ] ) ],
+			'campaign' => [ 'label' => __( 'Compose', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url() ],
+			'library' => [ 'label' => __( 'Library', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'library' ] ) ],
+			'subscribers' => [ 'label' => __( 'Subscribers', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'subscribers' ] ) ],
+			'settings' => [ 'label' => __( 'Settings', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'settings' ] ) ],
 		];
 		?>
 		<nav class="nav-tab-wrapper" style="margin-bottom: 16px;">
 			<?php foreach ( $tabs as $tab_key => $tab ) : ?>
 				<a
 					class="nav-tab <?php echo $active_tab === $tab_key ? 'nav-tab-active' : ''; ?>"
+					<?php if ( $active_tab === $tab_key ) { echo 'aria-current="page"'; } ?>
 					href="<?php echo esc_url( $tab['url'] ); ?>">
 					<?php echo esc_html( $tab['label'] ); ?>
 				</a>
@@ -1328,7 +1350,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			],
 		];
 		?>
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
 			<?php $this->render_page_tabs( 'campaigns' ); ?>
@@ -1811,10 +1833,10 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function render_settings_page() {
 		?>
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Email campaigns', 'yoohw-advanced-notifications' ); ?></h1>
 
-			<?php $this->render_page_tabs( 'settings' ); $this->render_data_settings(); ?>
+			<?php $this->render_page_tabs( 'settings' ); ?>
 
 			<?php if ( isset( $_GET['settings_saved'] ) ) : /* phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed. */ ?>
 				<div class="notice notice-success is-dismissible">
@@ -1822,7 +1844,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				</div>
 			<?php endif; ?>
 
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<form class="yoohw-advanced-notifications-panel" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="yoohw_an_save_customer_email_notify_settings">
 
 				<?php wp_nonce_field( 'yoohw_an_save_customer_email_notify_settings_action', 'yoohw_an_save_customer_email_notify_settings_nonce' ); ?>
@@ -1924,6 +1946,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				<?php submit_button( __( 'Save Settings', 'yoohw-advanced-notifications' ) ); ?>
 			</form>
+			<?php $this->render_data_settings(); ?>
 		</div>
 		<?php
 	}
@@ -1933,7 +1956,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		if ( is_wp_error( $payload ) ) {
 			?>
-			<div class="wrap">
+			<div class="wrap yoohw-an-workspace">
 				<h1><?php esc_html_e( 'Preview email campaign', 'yoohw-advanced-notifications' ); ?></h1>
 				<div class="notice notice-error">
 					<p><?php echo esc_html( $payload->get_error_message() ); ?></p>
@@ -1968,8 +1991,10 @@ class YOOHW_AN_Customer_Email_Notify {
 		$is_scheduled = $this->is_payload_scheduled( $payload );
 		?>
 
-		<div class="wrap">
+		<div class="wrap yoohw-an-workspace">
 			<h1><?php esc_html_e( 'Preview email campaign', 'yoohw-advanced-notifications' ); ?></h1>
+
+			<?php $this->render_page_tabs( 'campaign' ); ?>
 
 			<table class="widefat striped" style="max-width: 920px;">
 				<tbody>
@@ -2074,7 +2099,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			</table>
 
 			<?php if ( ! empty( $recipient_sample ) ) : ?>
-				<h2><?php esc_html_e( 'Recipient sample', 'yoohw-advanced-notifications' ); ?></h2>
+				<details class="yoohw-advanced-notifications-panel"><summary><?php esc_html_e( 'Saved recipient sample and due times', 'yoohw-advanced-notifications' ); ?></summary>
 				<table class="widefat striped" style="max-width: 920px;">
 					<thead>
 						<tr>
@@ -2125,6 +2150,7 @@ class YOOHW_AN_Customer_Email_Notify {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				</details>
 			<?php endif; ?>
 
 			<?php $this->render_operator_preview( $payload ); ?>
@@ -2141,9 +2167,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			</p>
 
 			<?php if ( $recipient_count > 0 ) : ?>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<form class="yoohw-advanced-notifications-panel" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<input type="hidden" name="action" value="yoohw_an_send_product_customer_email">
 					<input type="hidden" name="confirmed" value="1">
+					<h2><?php esc_html_e( 'Confirm this saved preview', 'yoohw-advanced-notifications' ); ?></h2>
+					<p><?php esc_html_e( 'Confirmation creates this campaign with its saved recipients and content. Audience changes require a new preview. Emails already handed to the mail system cannot be recalled; inbox delivery is not verified.', 'yoohw-advanced-notifications' ); ?></p>
 					<input type="hidden" name="preview_token" value="<?php echo esc_attr( $preview_token ); ?>">
 					<?php wp_nonce_field( 'yoohw_an_send_product_customer_email_action', 'yoohw_an_send_product_customer_email_nonce' ); ?>
 					<?php
@@ -5357,6 +5385,14 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$asset_version = YOOHW_AN_VERSION . '.' . (string) max( filemtime( dirname( __DIR__ ) . '/assets/admin.js' ), filemtime( dirname( __DIR__ ) . '/assets/admin.css' ) );
 		wp_enqueue_style( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.css', dirname( __FILE__ ) ), [ 'woocommerce_admin_styles' ], $asset_version );
+
+		global $_wp_admin_css_colors;
+		$scheme = get_user_option( 'admin_color' ) ?: 'fresh';
+		$scheme_colors = $_wp_admin_css_colors[ $scheme ]->colors ?? [];
+		$accent = sanitize_hex_color( $scheme_colors[2] ?? '' );
+		if ( $accent ) {
+			wp_add_inline_style( 'yoohw-advanced-notifications-admin', '.yoohw-an-workspace{--an-scheme-accent:' . $accent . ';}' );
+		}
 
 		wp_enqueue_script( 'yoohw-advanced-notifications-admin', plugins_url( 'assets/admin.js', dirname( __FILE__ ) ), [ 'jquery', 'wc-enhanced-select' ], $asset_version, true );
 		wp_add_inline_script(
