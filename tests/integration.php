@@ -141,7 +141,7 @@ try {
 	foreach ( [ $role_payload, $manual_payload ] as $scope_payload ) {
 		$scope_payload['campaign_id'] = $campaign_id;
 		$call( 'record_campaign_snapshot', $scope_payload, 'previewed' );
-		$stored = get_option( 'yoohw_an_campaigns' )[ $campaign_id ];
+		$stored = $call( 'get_campaign_history' )[ $campaign_id ];
 		$restored = $call( 'get_campaign_reschedule_payload', $stored );
 		$assert( $scope_payload['recipient_source'] . '_scope_survives_history_and_retry', ! is_wp_error( $restored ) && $scope_payload['user_roles'] === $restored['user_roles'] && $scope_payload['manual_emails'] === $restored['manual_emails'] );
 		$scope_token = $call( 'store_preview_payload', $scope_payload );
@@ -215,11 +215,11 @@ try {
 	$fail_mail = static function () { return false; };
 	add_filter( 'pre_wp_mail', $fail_mail, 20 );
 	$notify->process_single_email( $retry_args );
-	$assert( 'failed_mail_releases_delivery_claim', false === get_option( $retry_key, false ) );
+	$retry_row = $wpdb->get_row( $wpdb->prepare( "SELECT status FROM %i WHERE campaign_id = %s AND email_hash = %s", $table, $campaign_id, hash( 'sha256', $retry_args['to'] ) ), ARRAY_A );
+	$assert( 'unconfirmed_transport_result_is_unknown', 'unknown' === $retry_row['status'] );
 	remove_filter( 'pre_wp_mail', $fail_mail, 20 );
 	$notify->process_single_email( $retry_args );
-	$retry_claim = get_option( $retry_key );
-	$assert( 'failed_mail_can_be_retried', is_array( $retry_claim ) && 'sent' === $retry_claim['state'] );
+	$assert( 'unconfirmed_transport_result_is_not_resent', 'unknown' === $wpdb->get_var( $wpdb->prepare( "SELECT status FROM %i WHERE campaign_id = %s AND email_hash = %s", $table, $campaign_id, hash( 'sha256', $retry_args['to'] ) ) ) );
 	update_option( 'yoohw_an_suppress_automated_replies', 'yes' );
 	update_option( 'yoohw_an_no_reply_email', 'no-reply@example.com' );
 	$headers = $call( 'build_email_headers', 'support@example.com' );
@@ -273,6 +273,7 @@ try {
 	foreach ( $users as $user_id ) { wp_delete_user( $user_id ); }
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Remove the synthetic recipient rows created by this CLI fixture.
 	$wpdb->delete( $wpdb->prefix . 'yoohw_an_recipients', [ 'campaign_id' => $campaign_id ] );
+	foreach ( [ $call( 'campaign_record_key', $campaign_id ), $call( 'campaign_manifest_key', $campaign_id ), 'yoohw_an_optout_' . hash( 'sha256', $recipient['email'] ?? '' ), 'yoohw_an_optout_' . hash( 'sha256', $opted_out['to'] ?? '' ) ] as $name ) { $cleanup_options[] = $name; }
 	foreach ( $cleanup_options as $name ) { delete_option( $name ); }
 	foreach ( $original_options as $name => $value ) { null === $value ? delete_option( $name ) : update_option( $name, $value ); }
 	$call( 'delete_preview_payload', $preview_token );
