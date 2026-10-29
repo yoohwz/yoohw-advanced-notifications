@@ -1,5 +1,6 @@
 === Advanced Notifications for WooCommerce ===
 Contributors: yoohw
+Tags: woocommerce, email, notifications, email marketing, customers
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
@@ -7,84 +8,109 @@ Requires Plugins: woocommerce
 Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Tags: woocommerce, email, notifications, marketing
 
-Compose, preview, schedule and track WooCommerce customer email campaigns.
+Create targeted WooCommerce email campaigns with reusable drafts, recipient previews, scheduling, send controls and unsubscribe management.
 
 == Description ==
 
-Open Marketing > Email campaigns to create a campaign, view Campaigns & Logs, or configure sender settings.
+Advanced Notifications for WooCommerce helps store managers send product updates, post-purchase guidance and service announcements from the WordPress dashboard.
 
-* Recipients: selected product purchasers, WooCommerce customers with matching orders (processing/completed by default, including guests), registered users with an optional role filter, or a pasted email list.
-* Role selection matches any selected role. Leaving it empty includes all registered users.
-* Manual email lists reject invalid addresses and deduplicate emails without regard to letter case. Names fall back to email addresses; recipient-local scheduling uses UTC, while store-time scheduling uses the store timezone.
-* Exclusions: order statuses, product purchasers, manually entered email addresses, and previous unsubscribes.
-* WooCommerce HTML email styling, rich-text editor and live preview.
-* Test email, preview and confirmation before queuing a campaign.
-* Immediate delivery, one store-timezone instant, or the same local time per recipient using an explicitly labelled location estimate with UTC fallback. New schedules reject past and DST-ambiguous/nonexistent times.
-* Batched dispatch, shared campaign content, duplicate protection, recipient status and campaign logs.
-* Recover interrupted preparation and missing jobs; bounded retries for queue failures and known pre-transport failures.
-* Configurable From, Reply-To and automated-reply suppression headers.
-* Pause, Resume and Cancel individual campaigns; site-wide minute/day admission limits across campaigns.
-* Durable drafts, campaign duplication, three editable templates and personalized desktop/mobile previews.
-* Source-aware order/date/category/country/subscription/handoff filters, saved audiences and address inspection.
-* Durable opt-outs and signed unsubscribe links checked again before delivery.
-* Subscription evidence and previewed suppression imports, WordPress personal data export/erasure and configurable terminal retention.
-* Handed-to-mail-system, failed, skipped and unknown outcomes are shown separately; inbox delivery is not verified.
+Choose an audience, write your message using the rich-text editor, send a test email, review the recipient list and confirm the campaign. Manage everything from Marketing > Email campaigns.
 
-WooCommerce Subscriptions integration and Audience sync are not included.
-Default sender details come from WooCommerce email settings. Configure an appropriate mail transport for the site.
+= Choose and review your audience =
 
-This plugin uses its own yoohw_an_* options, hooks and recipient table. It does not import campaign history, sender settings, unsubscribes or queued jobs from YoOhw Extra Code. Review existing opt-outs before starting campaigns on a migrated site.
+* Select product or variation purchasers, WooCommerce customers with matching orders, registered users or a pasted email list. Order-based sources include guest customers.
+* Filter matching orders by product, category (including child categories), creation date, order status and billing country. These order conditions must match the same order.
+* Filter registered users by role and profile billing country. Only filters supported by the selected source can be used.
+* Select by subscription status or a previous campaign's recorded handoff outcome. Missing or unknown delivery history is not treated as proof that an email was never sent.
+* Apply exclusions, remove duplicate email addresses and respect saved unsubscribes across every recipient source.
+* Save audience criteria for reuse. Each use requires a fresh recipient preview and confirmation.
+* Review selection and exclusion counts and inspect why an email address is included or excluded.
 
-Deactivation cancels pending delivery/dispatch jobs, cancels retryable queue/schedule failures and removes the reconciliation cron event. Campaign data and opt-outs are retained. Reactivation does not automatically requeue cancelled jobs. See docs/reliability-review.md for upgrade and recovery behavior, and docs/operator-features.md for controls, audience semantics, scheduling and privacy decisions.
+= Write once and reuse =
+
+* Save incomplete drafts and return to them later without creating send jobs.
+* Duplicate an existing campaign into a new draft with a separate campaign identity.
+* Start with three editable templates for updates, post-purchase guidance and service announcements.
+* Use WooCommerce HTML email styling, the rich-text editor and desktop/mobile previews for a sample recipient.
+* Send a test email and continue editing the draft before confirming recipients.
+* Personalize the message body with {customer_name} and {product_name}. A missing customer name falls back to the email address. The product variable is a campaign-wide label, not a record of each recipient's purchases. Subjects and headings do not expand these variables.
+
+= Schedule and control sending =
+
+* Send after confirmation, at one time in the store timezone, or at the same local time for each recipient using a clearly labelled location estimate.
+* Preview the earliest/latest scheduled send times and how many recipients use the UTC fallback.
+* Pause, resume or cancel a campaign. Work that already started may finish; email already handed to the mail system cannot be recalled.
+* Set shared per-minute and per-day campaign admission limits for the website. Waiting for a limit or a pause does not consume retry attempts.
+* Track pending, processing, handed-off, failed, skipped and unknown outcomes, with reasons and overdue queue diagnostics.
+* Recover interrupted work using confirmed recipients and bounded retries for eligible known failures. Unknown handoff outcomes are not automatically retried.
+
+= Subscription and privacy tools =
+
+* Keep subscribed, unsubscribed and unknown states separate, with the recorded source and time where available.
+* Preview subscription/suppression imports before applying them. Repeated imports do not create duplicates or remove existing opt-outs.
+* Include signed unsubscribe links and check suppression again before handing off campaign mail.
+* Use WordPress personal data export and erasure tools for registered users and guest email addresses.
+* Configure optional retention for finished campaign content and personal logs while keeping the minimum suppression and duplicate-protection records.
+
+= Requirements and delivery =
+
+WooCommerce must be active. This plugin uses WooCommerce email rendering, the site's configured WordPress mail transport and Action Scheduler. A working queue runner is required for scheduled/background work. It does not provide an SMTP service, verify inbox delivery, or track opens and clicks.
+
+Only this plugin's campaign emails are subject to its send controls and admission limits. WooCommerce transactional emails and unrelated scheduled actions keep their existing behavior. Test emails are outside the campaign admission limits.
+
+This plugin does not include recurring marketing automation, WooCommerce Subscriptions audiences, CRM synchronization or additional messaging channels.
 
 == Installation ==
 
 1. Install and activate WooCommerce.
-2. Install this folder as wp-content/plugins/yoohw-advanced-notifications and activate the plugin.
-3. Open Marketing > Email campaigns > Settings to review sender details.
-4. Compose a campaign, send a test email, then preview and confirm the recipient list.
+2. Install and activate Advanced Notifications for WooCommerce. For a manual installation, upload the yoohw-advanced-notifications folder to wp-content/plugins/.
+3. Open Marketing > Email campaigns > Settings and review the sender, Reply-To, limits and retention settings.
+4. Open Compose, choose an audience and write your message. Save a draft or send a test email as needed.
+5. Select the schedule, preview the recipients, review the counts and confirm the campaign.
+6. Follow progress and use campaign controls in Campaigns & Logs.
 
-== Translation ==
+== Frequently Asked Questions ==
 
-The interface, validation messages, status labels and built-in unsubscribe text use the yoohw-advanced-notifications text domain. WordPress selects the locale for each request (the user's admin language in the dashboard, and the site language for background jobs).
+= Does an order or account mean a customer has subscribed? =
 
-1. Open languages/yoohw-advanced-notifications.pot in Poedit or a compatible translation editor. Loco Translate can also use this template.
-2. Create a translation for the WordPress locale, for example fr_FR (French) or vi (Vietnamese). Preserve placeholders such as %s, %1$d, {customer_name} and {product_name}.
-3. Save and compile matching PO/MO files, for example yoohw-advanced-notifications-fr_FR.po and yoohw-advanced-notifications-fr_FR.mo.
-4. Place them in wp-content/languages/plugins/ to keep them outside the plugin's update directory. Bundled translations in this plugin's languages/ directory are also supported.
-5. Select that language in WordPress Settings > General, or the administrator's profile language for the dashboard.
+No. An email address in an order, account or pasted list is not opt-in evidence. Without recorded evidence the status remains unknown. You can filter audiences by subscription status. Store managers are responsible for recording the appropriate permission for their messages. An existing unsubscribe always takes priority over a new subscription import.
 
-The POT is a translation template; language translations are supplied separately. Campaign subjects, headings and messages written by the administrator, product names and previously stored log messages are not automatically translated. Existing WordPress and WooCommerce language packs provide their own strings.
+= What does a sent or handed-off result mean? =
 
-Regenerate the template after changing source strings:
+It means the site's mail system accepted the handoff. It does not prove delivery to an inbox. Failed and unknown outcomes are shown separately. Only eligible known failures can be retried; unknown results are not automatically replayed.
 
-    wp i18n make-pot wp-content/plugins/yoohw-advanced-notifications wp-content/plugins/yoohw-advanced-notifications/languages/yoohw-advanced-notifications.pot --domain=yoohw-advanced-notifications --exclude=tests
+= Which timezone is used? =
 
-== Development ==
+Store-time scheduling uses the store timezone shown when composing the campaign. Recipient-local scheduling estimates a timezone only when the billing country has one supported timezone; missing or ambiguous location data uses UTC. This is a location estimate, not a confirmed customer preference. Manual lists use UTC.
 
-The campaign implementation is adapted from YoOhw Extra Code 1.1.43 on the local yoohw site. Only the Marketing > Email notify feature is included; other site-specific extensions are excluded.
+New schedules reject past times and local times that are missing or repeated because of daylight saving changes. They are not silently moved to another day. Confirmed UTC due times are preserved through pauses, retries and recovery; queue delays and limits may make actual sending later.
 
-Run the integration checks in a disposable WordPress + WooCommerce environment:
+= Can I change a confirmed campaign? =
 
-    wp eval-file wp-content/plugins/yoohw-advanced-notifications/tests/integration.php
+Confirmed content, recipients and scheduled times are saved for that campaign. Editing a draft or saved audience does not change it. Duplicate the campaign into a new draft to prepare another mailing, then preview and confirm again. Cancelled campaigns cannot be resumed.
 
-The checks intercept outgoing mail and scheduler submissions, use synthetic fixtures, and remove their test data.
+= Why is a scheduled campaign waiting? =
 
-To check translation loading in a local English-language installation:
+Check its pause state, admission limit and queue diagnostics in Campaigns & Logs. Shared limits use fixed UTC minute/day windows; a reserved send slot may remain counted after an interrupted attempt. A working WordPress cron or queue worker is still required. The controls cannot recall mail already handed off.
 
-    wp --skip-plugins --skip-themes eval-file wp-content/plugins/yoohw-advanced-notifications/tests/internationalization.php
+= What data does the plugin store and erase? =
 
-This creates and removes a temporary French MO file. It does not change the site or account language and stops if a French language pack already exists.
+The plugin stores campaign content, confirmed recipients, scheduling and delivery records, drafts, saved audience criteria, subscription evidence and opt-outs in your WordPress database. Emails are sent through the mail transport configured on your site.
 
-Additional reliability checks use separate PHP processes, real database/Action Scheduler jobs, controlled transport and process termination:
+WordPress Tools > Export Personal Data and Erase Personal Data include this plugin's records for the requested email address, including guests. Erasure retains protective hashes and opt-out evidence to prevent reconstruction or another send. In-flight work or shared content in an active campaign may require another erasure pass after completion; the erasure result reports retained data.
 
-    python3 tests/reliability.py --wp-command /path/to/disposable-wp-wrapper --output /tmp/an-evidence-unique
+Retention is off by default (0 days). When enabled, hourly cleanup removes content, personal recipient details, snapshots and plugin queue arguments/logs from eligible finished campaigns after the configured period. Active campaigns, unfinished preparation and retryable work are excluded. Minimal campaign identifiers, email hashes, outcomes, claims, counters and suppression remain. Drafts and saved criteria remain until explicitly deleted or erased. This cleanup does not remove records held by mail providers, server logs or backups.
 
-The wrapper selects a disposable WordPress installation with WooCommerce and this checkout active. The database name must contain reliability. This suite resets the plugin fixtures and queue hooks in that database. Never run it against store data. Evidence contains the tested commit, worker logs, recipient states, opt-outs and handoff counts.
+= What happens when I deactivate or upgrade? =
 
-See docs/reliability-review.md for the implementation, compatibility decisions and limits.
+Deactivation cancels pending campaign work and removes the reconciliation event while retaining campaign records and opt-outs. Reactivation does not automatically restart cancelled work.
+
+When upgrading, stop background workers that have already loaded the old plugin code before replacing files. Version 0.3.0 keeps the existing plugin slug, text domain, settings, campaigns and opt-outs. Do not downgrade directly to 0.2.2, which does not understand the new cancellation and erasure protections. Data from the separate YoOhw Extra Code plugin is not imported automatically.
+
+= Can I translate the interface? =
+
+Yes. Use the yoohw-advanced-notifications text domain and the included languages/yoohw-advanced-notifications.pot template with Poedit or Loco Translate. Store compiled locale files in wp-content/languages/plugins/ to preserve them across updates. Administrator-written email content and saved messages are not translated automatically. Preserve placeholders such as %s, {customer_name} and {product_name}.
 
 == Changelog ==
 
@@ -122,4 +148,4 @@ See docs/reliability-review.md for the implementation, compatibility decisions a
 == Upgrade Notice ==
 
 = 0.3.0 =
-Adds campaign controls, drafts, audiences, scheduling and privacy tools. Existing settings, campaigns and opt-outs are retained. Stop existing background workers before replacing plugin files. Do not downgrade to 0.2.2: it does not understand the new cancellation and erasure protections.
+Campaign controls, reusable drafts, audience filters, scheduling and privacy tools. Existing data is retained. Stop old background workers before upgrading. Do not downgrade to 0.2.2 because it lacks the new cancellation and erasure protections.
