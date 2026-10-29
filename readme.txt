@@ -1,10 +1,10 @@
-=== YoOhw Advanced Notifications ===
+=== Advanced Notifications for WooCommerce ===
 Contributors: yoohw
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
 Requires Plugins: woocommerce
-Stable tag: 0.2.2
+Stable tag: 0.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Tags: woocommerce, email, notifications, marketing
@@ -88,11 +88,15 @@ See docs/reliability-review.md for the implementation, compatibility decisions a
 
 == Changelog ==
 
-= Unreleased =
+= 0.3.0 =
+* Rename the plugin to Advanced Notifications for WooCommerce; keep the existing slug, text domain and stored data.
 * Add individual campaign controls and shared sending admission limits.
 * Add durable drafts, duplication, content templates and personalized previews.
 * Add source-aware saved audiences and explicit timezone scheduling.
 * Add subscription/suppression administration, privacy callbacks and terminal retention.
+* Preserve erased data boundaries, known-unsent history and cancellation during concurrent recovery.
+* Unify campaign forms with the admin color scheme, SelectWoo fields and desktop/mobile preview controls.
+* Harden confirmed recipient snapshots, duplicate protection, bounded retries and interrupted-work recovery.
 
 = 0.2.2 =
 * Align the translation domain with the WordPress.org slug yoohw-advanced-notifications.
@@ -114,3 +118,8 @@ See docs/reliability-review.md for the implementation, compatibility decisions a
 * Extract standalone customer email campaigns from YoOhw Extra Code.
 * Remove WooCommerce Subscriptions audiences and exclusions, and Audience sync integration.
 * Isolate plugin storage/hooks and use the current store's sender defaults.
+
+== Upgrade Notice ==
+
+= 0.3.0 =
+Adds campaign controls, drafts, audiences, scheduling and privacy tools. Existing settings, campaigns and opt-outs are retained. Stop existing background workers before replacing plugin files. Do not downgrade to 0.2.2: it does not understand the new cancellation and erasure protections.

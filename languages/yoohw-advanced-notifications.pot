@@ -2,20 +2,20 @@
 # This file is distributed under the GPLv2 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: YoOhw Advanced Notifications 0.2.2\n"
+"Project-Id-Version: Advanced Notifications for WooCommerce 0.3.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/yoohw-advanced-notifications\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-28T10:40:04+00:00\n"
+"POT-Creation-Date: 2026-10-29T02:04:10+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
 
 #. Plugin Name of the plugin
-msgid "YoOhw Advanced Notifications"
+msgid "Advanced Notifications for WooCommerce"
 msgstr ""
 
 #. Plugin URI of the plugin
@@ -2113,5 +2113,5 @@ msgid "Recipient unsubscribed before recovery."
 msgstr ""
 
 #: yoohw-advanced-notifications.php:43
-msgid "YoOhw Advanced Notifications requires WooCommerce to be active."
+msgid "Advanced Notifications for WooCommerce requires WooCommerce to be active."
 msgstr ""
