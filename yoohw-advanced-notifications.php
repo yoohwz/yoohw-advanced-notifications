@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: YoOhw Advanced Notifications
+ * Plugin Name: Advanced Notifications for WooCommerce
  * Plugin URI: https://wordpress.org/plugins/yoohw-advanced-notifications
  * Description: Compose, preview, schedule and track WooCommerce customer email campaigns.
- * Version: 0.2.2
+ * Version: 0.3.0
  * Author: YoOhw Studio
  * Author URI: https://yoohw.com/
  * License: GPLv2 or later
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'YOOHW_AN_VERSION', '0.2.2' );
+define( 'YOOHW_AN_VERSION', '0.3.0' );
 
 function yoohw_an_load_textdomain() {
 	// Register bundled language packs for private installations without WordPress.org language packs.
@@ -40,7 +40,7 @@ add_action( 'plugins_loaded', function () {
 	if ( ! class_exists( 'WooCommerce' ) ) {
 		add_action( 'admin_notices', function () {
 			if ( current_user_can( 'activate_plugins' ) ) {
-				echo '<div class="notice notice-error"><p>' . esc_html__( 'YoOhw Advanced Notifications requires WooCommerce to be active.', 'yoohw-advanced-notifications' ) . '</p></div>';
+				echo '<div class="notice notice-error"><p>' . esc_html__( 'Advanced Notifications for WooCommerce requires WooCommerce to be active.', 'yoohw-advanced-notifications' ) . '</p></div>';
 			}
 		} );
 		return;
