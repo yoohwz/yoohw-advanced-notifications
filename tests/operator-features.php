@@ -35,6 +35,18 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$old_revision = [ 'draft_id' => $draft['draft_id'], 'draft_revision' => $draft['revision'] ];
 		$draft = $call( 'save_draft', array_merge( $draft, [ 'subject' => 'Changed' ] ) );
 		$assert( 'saving_invalidates_old_preview', is_wp_error( $call( 'validate_preview_revision', $old_revision ) ) );
+		// Optional names may be absent in older/minimal drafts and duplicated campaigns.
+		$nameless = $call( 'save_draft', [ 'subject' => 'Subject fallback ' . $tag ] ); $drafts[] = $nameless['draft_id'];
+		$untitled = $call( 'save_draft', [] ); $drafts[] = $untitled['draft_id'];
+		$nameless_audience = $tag . '-nameless'; $options[] = 'yoohw_an_audience_' . $nameless_audience;
+		$call( 'write_durable_option', end( $options ), [ 'id' => $nameless_audience, 'criteria' => [] ] );
+		set_error_handler( static function ( $severity, $message, $file, $line ) { throw new ErrorException( $message, 0, $severity, $file, $line ); }, E_WARNING | E_NOTICE );
+		try {
+			ob_start(); $call( 'render_authoring_library' ); $library_html = ob_get_clean();
+			ob_start(); $call( 'render_saved_audience_picker', [] ); $picker_html = ob_get_clean();
+		} finally { restore_error_handler(); }
+		$assert( 'library_optional_draft_names_fall_back_without_php_warnings', str_contains( $library_html, '>Subject fallback ' . $tag . '</a>' ) && str_contains( $library_html, '>' . $untitled['draft_id'] . '</a>' ) && str_contains( $library_html, '>Unfinished</a>' ) );
+		$assert( 'nameless_audience_renders_in_library_and_picker_without_php_warnings', str_contains( $library_html, '>' . $nameless_audience . '</a>' ) && str_contains( $picker_html, '>' . $nameless_audience . '</a>' ) );
 		[ $p, $r ] = $make( 'control', [ $tag . '-a@example.com', $tag . '-b@example.com' ] );
 		$id = $p['campaign_id']; $notify->dispatch_campaign_batch( $id );
 		$before = $state( $id );

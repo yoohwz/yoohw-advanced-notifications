@@ -129,7 +129,7 @@ trait YOOHW_AN_Campaign_Authoring {
 		$drafts = $this->read_durable_options( 'yoohw_an_draft_' );
 		if ( ! $drafts ) { echo '<p>' . esc_html__( 'No saved drafts yet.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		foreach ( $drafts as $draft ) {
-			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'draft_id' => $draft['draft_id'] ] ) ) . '">' . esc_html( $draft['internal_name'] ?: ( $draft['subject'] ?: $draft['draft_id'] ) ) . '</a>';
+			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'draft_id' => $draft['draft_id'] ] ) ) . '">' . esc_html( ( $draft['internal_name'] ?? '' ) ?: ( ( $draft['subject'] ?? '' ) ?: $draft['draft_id'] ) ) . '</a>';
 			$this->library_button( $draft['draft_id'], 'delete_draft', __( 'Delete draft', 'yoohw-advanced-notifications' ) );
 			echo '</div>';
 		}
@@ -137,7 +137,7 @@ trait YOOHW_AN_Campaign_Authoring {
 		$audiences = $this->read_durable_options( 'yoohw_an_audience_' );
 		if ( ! $audiences ) { echo '<p>' . esc_html__( 'No saved audiences yet.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		foreach ( $audiences as $audience ) {
-			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( $audience['name'] ) . '</a>';
+			echo '<div class="an-library-item"><a href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( ( $audience['name'] ?? '' ) ?: $audience['id'] ) . '</a>';
 			$this->library_button( $audience['id'], 'delete_audience', __( 'Delete audience', 'yoohw-advanced-notifications' ) );
 			echo '</div>';
 		}
@@ -149,7 +149,7 @@ trait YOOHW_AN_Campaign_Authoring {
 	private function render_saved_audience_picker( $p ) {
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Saved audience criteria', 'yoohw-advanced-notifications' ) . '</h2><p>';
 		foreach ( $this->read_durable_options( 'yoohw_an_audience_' ) as $audience ) {
-			echo '<a class="button" href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( $audience['name'] ) . '</a> ';
+			echo '<a class="button" href="' . esc_url( $this->get_admin_page_url( [ 'audience_id' => $audience['id'] ] ) ) . '">' . esc_html( ( $audience['name'] ?? '' ) ?: $audience['id'] ) . '</a> ';
 		}
 		echo '<a href="' . esc_url( $this->get_admin_page_url( [ 'tab' => 'library' ] ) ) . '">' . esc_html__( 'Open Library', 'yoohw-advanced-notifications' ) . '</a></p><p class="description">' . esc_html__( 'Opening saved criteria replaces this form. Save your draft first to keep current edits.', 'yoohw-advanced-notifications' ) . '</p><input type="hidden" name="audience_id" value="' . esc_attr( $p['audience_id'] ?? '' ) . '"><div class="an-form-row"><label class="an-field">' . esc_html__( 'Audience name', 'yoohw-advanced-notifications' ) . ' <input name="audience_name" value="' . esc_attr( $p['audience_name'] ?? '' ) . '"></label> <button class="button" formnovalidate name="authoring_operation" value="save_audience">' . esc_html__( 'Save audience criteria', 'yoohw-advanced-notifications' ) . '</button></div></section>';
 	}
