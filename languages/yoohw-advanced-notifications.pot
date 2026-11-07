@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-07T02:52:58+00:00\n"
+"POT-Creation-Date: 2026-11-07T03:13:22+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.9.0\n"
 "X-Domain: yoohw-advanced-notifications\n"
@@ -190,6 +190,7 @@ msgid "1. Audience"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1028
+#: includes/trait-campaign-automation-ui.php:94
 msgid "2. Content"
 msgstr ""
 
@@ -198,6 +199,7 @@ msgid "3. Schedule"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1028
+#: includes/trait-campaign-automation-ui.php:94
 msgid "4. Review"
 msgstr ""
 
@@ -251,14 +253,16 @@ msgstr ""
 msgid "Includes billing email addresses from matching orders, including guests (processing/completed by default). Each email address is included once."
 msgstr ""
 
+#. translators: %d: Number of hours after the Completed event.
 #: includes/class-customer-email-notify.php:1073
 #: includes/class-customer-email-notify.php:2012
-#: includes/trait-campaign-automation-ui.php:81
+#: includes/trait-campaign-automation-ui.php:84
 msgid "Products"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1080
 #: includes/class-customer-email-notify.php:1125
+#: includes/trait-campaign-automation-ui.php:99
 msgid "Search products or variations"
 msgstr ""
 
@@ -309,6 +313,7 @@ msgid "Comma, semicolon, space, or line break separated."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1154
+#: includes/trait-campaign-automation-ui.php:106
 msgid "Content"
 msgstr ""
 
@@ -320,21 +325,23 @@ msgstr ""
 #: includes/class-customer-email-notify.php:1228
 #: includes/class-customer-email-notify.php:1572
 #: includes/class-customer-email-notify.php:2071
-#: includes/trait-campaign-automation-ui.php:100
+#: includes/trait-campaign-automation-ui.php:107
+#: includes/trait-campaign-automation-ui.php:132
+#: includes/trait-campaign-automation-ui.php:135
 msgid "Subject"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1166
 #: includes/class-customer-email-notify.php:5221
 #: includes/class-customer-email-notify.php:5466
-#: includes/trait-campaign-automation-ui.php:81
-#: includes/trait-campaign-automation-ui.php:93
+#: includes/trait-campaign-automation-ui.php:107
 msgid "Email heading"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1171
 #: includes/class-customer-email-notify.php:5208
 #: includes/class-customer-email-notify.php:5467
+#: includes/trait-campaign-automation-ui.php:108
 msgid "Message body"
 msgstr ""
 
@@ -365,7 +372,7 @@ msgid "Only the test recipient will receive this email."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1206
-#: includes/trait-campaign-automation-ui.php:96
+#: includes/trait-campaign-automation-ui.php:118
 msgid "Test email address"
 msgstr ""
 
@@ -376,24 +383,28 @@ msgstr ""
 
 #: includes/class-customer-email-notify.php:1217
 #: includes/class-customer-email-notify.php:1220
+#: includes/trait-campaign-automation-ui.php:128
+#: includes/trait-campaign-automation-ui.php:129
 msgid "Email preview"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1221
+#: includes/trait-campaign-automation-ui.php:129
 msgid "Rendered with the active WooCommerce email template."
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1223
+#: includes/trait-campaign-automation-ui.php:129
 msgid "Live"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1229
 #: includes/class-customer-email-notify.php:5465
-#: includes/trait-campaign-automation-ui.php:93
 msgid "Email subject"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1236
+#: includes/trait-campaign-automation-ui.php:132
 msgid "WooCommerce email preview"
 msgstr ""
 
@@ -477,10 +488,12 @@ msgid "Preview Recipients"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1311
+#: includes/trait-campaign-automation-ui.php:122
 msgid "Back"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1312
+#: includes/trait-campaign-automation-ui.php:122
 msgid "Continue"
 msgstr ""
 
@@ -493,6 +506,7 @@ msgid "Compose"
 msgstr ""
 
 #: includes/class-customer-email-notify.php:1324
+#: includes/trait-campaign-automation-ui.php:80
 msgid "Automations"
 msgstr ""
 
@@ -1792,7 +1806,7 @@ msgid "This automation rule is unavailable."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:67
-msgid "Rule saved. A new rule remains disabled until you choose Enable. Changes to enabled rules apply to new events only."
+msgid "Rule saved. New rules stay disabled until you choose Enable. Changes to enabled rules apply to new events only."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:67
@@ -1800,172 +1814,267 @@ msgid "Rule enabled for new Completed events. Historical orders were not queued.
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:67
-msgid "Rule disabled. New events stop and unstarted emails are cancelled. Work already in flight may finish."
+msgid "Rule disabled. Unstarted emails are cancelled; work already in flight may finish."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:67
-msgid "Test mail handed to the mail system. Inbox delivery is not verified; no rule was saved or enabled."
+msgid "Test mail handed to the mail system. No rule was saved or enabled. Inbox delivery is not verified."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:67
-msgid "Preview only. No rule was saved or enabled and no delivery job was created."
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:77
-msgid "Completed-order guides"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:77
-msgid "One event, one delay and one email per order and rule. A customer with several qualifying orders can receive one guide for each order. Only new Completed events after Enable are captured; there is no historical backfill."
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:77
-msgid "An active subscription is required at sending. Unknown is not consent. Unsubscribe and erasure protection always apply. Orders must still be Completed and match the saved conditions; cancelled, failed and fully refunded orders are skipped. Partial refunds remain eligible while an amount remains. Started work may finish when a rule is disabled."
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:78
-msgid "No saved automation rules yet."
+msgid "Sample refreshed. No rule was saved or enabled and no delivery job was created."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:80
-msgid "Enabled"
+msgid "Send a helpful guide after an order is completed. Enable uses the saved configuration."
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:80
-msgid "Disabled"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:80
-#: includes/trait-campaign-automation-ui.php:87
-msgid "Delay after Completed (hours)"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:80
-msgid "Edit rule"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:81
-msgid "Saved conditions and content"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:81
-msgid "All products"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:81
-msgid "Category IDs including descendants"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:81
-msgid "All categories"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:82
-msgid "Disable and cancel waiting emails"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:82
-msgid "Enable"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:85
 msgid "New rule"
 msgstr ""
 
+#: includes/trait-campaign-automation-ui.php:81
+msgid "No rules yet. Build your first guide below, then enable it when you are ready."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:84
+msgid "Enabled"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:84
+msgid "Disabled"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:84
+msgid "Completed → wait %d hours → send one guide"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:84
+msgid "Saved configuration"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:84
+msgid "All products"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:84
+msgid "Categories"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:84
+msgid "All categories"
+msgstr ""
+
+#. translators: %d: Number of hours after the Completed event.
 #: includes/trait-campaign-automation-ui.php:85
-msgid "Open campaign history"
+msgid "Edit rule"
 msgstr ""
 
+#. translators: %d: Number of hours after the Completed event.
 #: includes/trait-campaign-automation-ui.php:85
-msgid "Look up contacts by email"
+msgid "Disable and cancel waiting emails"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:87
-msgid "Edit completed-order guide"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:87
-msgid "New completed-order guide"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:87
-msgid "Saving changes to an enabled rule affects new events only. Waiting emails keep their confirmed content, order context and due time. Preview and test use the form below without changing any saved rule."
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:87
-msgid "Rule name"
+#. translators: %d: Number of hours after the Completed event.
+#: includes/trait-campaign-automation-ui.php:85
+msgid "Enable"
 msgstr ""
 
 #: includes/trait-campaign-automation-ui.php:88
-msgid "Products or variations (empty means any)"
+msgid "View campaigns and delivery status"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:89
-msgid "Categories including descendants (empty means any)"
+#: includes/trait-campaign-automation-ui.php:88
+msgid "Look up a contact"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:93
-msgid "Product and category conditions must match the same order. Parent products include their variations; a selected variation matches only that variation."
+#: includes/trait-campaign-automation-ui.php:92
+msgid "Rule name (internal only)"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:93
-msgid "A guide for order {order_number}"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:93
-msgid "Getting started with your purchase"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:93
-msgid "Guide content"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:94
-msgid "<p>Hello {customer_name},</p><p>Thank you for purchasing {ordered_products} (order {order_number}). Add setup or care steps, when to follow them and a support contact here.</p>"
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:95
-msgid "Variables in subject, heading and body: {customer_name}, {store_name}, {product_name}, {order_number}, {ordered_products}, {order_url}. Order values come from the exact triggering order and are frozen when its event is captured. Missing names use Customer. Guest order links are empty; account links require the owning account login."
-msgstr ""
-
-#: includes/trait-campaign-automation-ui.php:95
+#: includes/trait-campaign-automation-ui.php:92
+#: includes/trait-campaign-automation-ui.php:119
 msgid "Save changes for new events"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:95
+#: includes/trait-campaign-automation-ui.php:92
+#: includes/trait-campaign-automation-ui.php:119
 msgid "Save rule"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:95
-msgid "New rules are saved disabled. Enable the saved rule explicitly when its conditions, content and delay are ready."
+#: includes/trait-campaign-automation-ui.php:92
+msgid "Waiting emails keep their confirmed content, order context and due time."
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:96
-msgid "Preview and test with an order"
+#: includes/trait-campaign-automation-ui.php:92
+msgid "Save your rule, then explicitly Enable it above. Saving alone never enables a new rule."
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:96
+#: includes/trait-campaign-automation-ui.php:93
+msgid "Automation steps"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:94
+msgid "1. Conditions"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:94
+msgid "3. Timing"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:97
+msgid "Conditions"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:97
+msgid "Choose which completed orders should receive this guide."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:98
+msgid "Trigger: order changes to Completed"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:98
+msgid "Only new events after Enable are captured. There is no historical backfill. A customer with several qualifying orders can receive one guide for each order."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:99
+msgid "Products or variations (empty means any)"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:100
+msgid "Categories including descendants (empty means any)"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:102
+msgid "Product and category conditions match the same order. Parent products include their variations; a selected variation matches only that variation."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:103
+msgid "Eligibility and subscription"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:103
+msgid "An active subscription is required at sending. Unknown is not consent. Unsubscribe and erasure protection always apply. The order must still be Completed, match its saved conditions and keep the same billing email. Cancelled, failed and fully refunded orders are skipped; partial refunds remain eligible while an amount remains."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:106
+msgid "Write useful setup or care instructions for the purchased items."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:107
+msgid "A guide for order {order_number}"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:107
+msgid "Getting started with your purchase"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:108
+msgid "<p>Hello {customer_name},</p><p>Thank you for purchasing {ordered_products}.</p><p>Before you start, check the setup instructions included with your order. Keep this email handy and contact our store if you need help.</p><p>Order: {order_number}</p>"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:109
+msgid "An unsubscribe link is added automatically. The live preview shows template text; Review uses the exact sample order."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:109
+msgid "Personalization variables"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:109
+msgid "Use {customer_name}, {store_name}, {product_name}, {order_number}, {ordered_products} and {order_url} in the subject, heading or body. Order values come from the triggering order and are frozen when captured. Missing names use Customer. Guest order links are empty; account links require the owning account login."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:112
+msgid "Timing"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:112
+msgid "Set how long to wait after the order becomes Completed."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:113
+msgid "Delay after Completed (hours)"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:113
+msgid "Use 0 to queue immediately, or 24 to wait one day. Sending limits and queue delays can make actual delivery later."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:113
+msgid "Editing the delay affects new events only. Waiting emails keep their original due time."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:116
+msgid "Preview and test"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:116
+msgid "Check the personalized email using an order you can access."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:117
 msgid "Sample order ID"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:96
+#: includes/trait-campaign-automation-ui.php:117
 msgid "Preview guide"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:96
+#: includes/trait-campaign-automation-ui.php:118
 msgid "Send test email"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:96
-msgid "These actions create no campaign or delivery job. Test mail goes only to the test address entered above. A sample can be previewed even when its order is not currently eligible."
+#: includes/trait-campaign-automation-ui.php:118
+msgid "Test mail goes only to this address. Preview and test create no campaign or delivery job, and never save or enable the rule."
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:100
+#: includes/trait-campaign-automation-ui.php:119
+msgid "Ready to save?"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:119
+msgid "Save the form, then Enable the saved rule above. If it is already enabled, your changes apply to new events only."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:119
+msgid "What happens when I disable a rule?"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:119
+msgid "New events stop and unstarted emails are cancelled. Work already in flight may finish. Re-enabling never restores cancelled mail. History is preserved."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:128
+#: includes/trait-campaign-automation-ui.php:129
+#: includes/trait-campaign-automation-ui.php:135
 msgid "Personalized guide preview"
 msgstr ""
 
-#: includes/trait-campaign-automation-ui.php:100
+#: includes/trait-campaign-automation-ui.php:129
+msgid "Based on the form at the last refresh."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:129
+msgid "Sample"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:135
+msgid "The form has changed. Choose Preview guide to refresh this sample before saving or testing."
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:135
 msgid "Sample recipient"
+msgstr ""
+
+#: includes/trait-campaign-automation-ui.php:136
+msgid "Choose a sample order and select Preview guide to see its customer name, products and order details here."
 msgstr ""
 
 #: includes/trait-campaign-automations.php:16

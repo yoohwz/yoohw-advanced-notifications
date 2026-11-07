@@ -52,6 +52,8 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 		$assert( 'preview_cache_contains_no_rendered_recipient_or_html', ! isset( $preview['recipient'], $preview['email'], $preview['html'] ) && ! str_contains( wp_json_encode( $preview ), 'Guide Buyer' ) );
 		$_GET = $preview_args; ob_start(); $call( 'render_automations_page' ); $html = ob_get_clean();
 		$assert( 'preview_restores_form_and_personalized_sample', str_contains( $html, 'name="subject" required value="Unsaved {order_number}"' ) && str_contains( $html, 'Personalized guide preview' ) && str_contains( $html, 'Guide Buyer' ) );
+		$assert( 'authoring_shares_composer_steps_and_returns_sample_to_review', 4 === substr_count( $html, 'data-an-panel=' ) && str_contains( $html, 'data-an-initial-step="review"' ) && str_contains( $html, 'an-step-controls' ) );
+		$assert( 'content_reuses_live_woocommerce_preview_and_device_controls', str_contains( $html, 'id="email_message"' ) && str_contains( $html, 'name="message"' ) && str_contains( $html, 'id="yoohw-advanced-notifications-preview-frame"' ) && 2 === substr_count( $html, 'aria-label="Mobile"' ) );
 		$assert( 'rule_controls_use_existing_post_and_nonce_authority', str_contains( $html, 'name="action" value="yoohw_an_automation"' ) && str_contains( $html, 'name="_wpnonce"' ) && str_contains( $html, 'name="operation" value="enable"' ) );
 		$assert( 'ui_explains_no_backfill_and_per_order_delivery', str_contains( $html, 'no historical backfill' ) && str_contains( $html, 'one guide for each order' ) );
 		$erased_key = 'yoohw_an_erased_' . hash( 'sha256', strtolower( $order->get_billing_email() ) ); update_option( $erased_key, [ 'erased' => true ], false );
@@ -78,7 +80,7 @@ if ( ! defined( 'WP_CLI' ) || ! WP_CLI || ! str_contains( DB_NAME, 'reliability'
 
 		$preview_args = $invoke( $unsaved, 'preview', $id, [ 'sample_order_id' => (string) $order->get_id() ] );
 		wp_set_current_user( $other_admin ); $_GET = $preview_args; ob_start(); $call( 'render_automations_page' ); $other = ob_get_clean();
-		$assert( 'preview_is_bound_to_the_authoring_user', ! str_contains( $other, 'Preview only for' ) && ! str_contains( $other, 'Personalized guide preview' ) );
+		$assert( 'preview_is_bound_to_the_authoring_user', ! str_contains( $other, 'Guide Buyer' ) && ! str_contains( $other, 'class="an-automation-sample"' ) );
 		wp_set_current_user( $subscriber ); $_GET = []; ob_start(); $call( 'render_automations_page' ); $denied = ob_get_clean();
 		$expect_die( static function () use ( $invoke, $data ) { $invoke( $data, 'save' ); } );
 		$assert( 'customer_cannot_view_or_modify_automation_rules', '' === $denied && count( $call( 'automation_rules' ) ) === $before_rules + 1 );
