@@ -176,6 +176,12 @@ try {
 	$_POST['schedule_mode'] = 'scheduled';
 	$_POST['scheduled_at'] = '2027-02-30T10:00';
 	$assert( 'invalid_calendar_date_rejected', is_wp_error( $call( 'get_payload_from_request' ) ) );
+	// Exercise pre-AN-5 jobs, which have shared content but no confirmed context manifest.
+	// Modern confirmed dispatch is covered end to end in contextual-campaigns.php.
+	unset( $payload['personalization_version'], $payload['store_name'] );
+	$legacy_campaign = $call( 'get_campaign_history' )[ $campaign_id ];
+	unset( $legacy_campaign['personalization_version'], $legacy_campaign['store_name'] );
+	$call( 'save_campaign_record', $legacy_campaign );
 	$payload['campaign_id'] = $campaign_id;
 	$payload['message'] .= str_repeat( '<p>Shared rich email content.</p>', 2000 );
 	$recipient = [ 'email' => 'delivery-' . $tag . '@example.com', 'name' => 'Fixture Recipient', 'country' => 'VN' ];
