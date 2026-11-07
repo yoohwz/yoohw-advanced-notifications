@@ -24,6 +24,7 @@ Choose an audience, write your message using the rich-text editor, send a test e
 * Filter registered users by role and profile billing country. Only filters supported by the selected source can be used.
 * Select by subscription status or a previous campaign's recorded handoff outcome. Missing or unknown delivery history is not treated as proof that an email was never sent.
 * Apply exclusions, remove duplicate email addresses and respect saved unsubscribes across every recipient source.
+* Choose first-time buyers (one valid order), repeat buyers (two or more), or customers with no valid purchase in the last X days. History spans the entire store, outside campaign product/date filters. Processing and Completed orders count by normalized billing email; cancelled, failed and fully refunded orders do not. Partial refunds count while value remains; free orders without refunds count. Inactivity uses order creation time and X times 24 hours; customers with no valid purchases are excluded.
 * Save audience criteria for reuse. Each use requires a fresh recipient preview and confirmation.
 * Review selection and exclusion counts and inspect why an email address is included or excluded.
 
@@ -45,6 +46,14 @@ Choose an audience, write your message using the rich-text editor, send a test e
 * Track pending, processing, handed-off, failed, skipped and unknown outcomes, with reasons and overdue queue diagnostics.
 * Recover interrupted work using confirmed recipients and bounded retries for eligible known failures. Unknown handoff outcomes are not automatically retried.
 
+= One guide after Completed =
+
+* Open Automations to save a guide with optional products/categories and a delay of 0–8760 hours. Preview an accessible sample order or send a test to your chosen address, then explicitly enable the saved rule.
+* Only new transitions to Completed are captured. Enabling never scans historical orders. Each rule/order can create at most one email, including repeated transitions and multiple matching items; different orders for the same email can each receive a guide.
+* An active subscription is required at sending. Unknown is not consent. Orders must still be Completed, have the same valid billing email, match saved product/category conditions and not be fully refunded. Partial refunds remain eligible while value remains. Subscription, suppression and erasure protections are checked before handoff.
+* Content, triggering-order context and UTC due time are fixed when captured. Editing a rule changes future events. Disabling stops new events and cancels unstarted mail; started work may finish. Re-enabling does not restore cancelled mail.
+* Use Campaigns & Logs or the contact lookup to inspect the guide, exact order and recorded result. Existing limits, recovery and unknown-outcome protections apply. A working queue is required; delivery may be later than the due time.
+
 = Subscription and privacy tools =
 
 * Place [yoohw_an_subscribe] on a page for guest signup. Optional, unchecked Classic Checkout and Checkout Blocks fields (Blocks requires WooCommerce 8.9 or later) request a confirmation email; buying or creating an account never establishes consent.
@@ -64,7 +73,7 @@ WooCommerce must be active. This plugin uses WooCommerce email rendering, the si
 
 Only this plugin's campaign emails are subject to its send controls and admission limits. WooCommerce transactional emails and unrelated scheduled actions keep their existing behavior. Test emails are outside the campaign admission limits.
 
-This plugin does not include recurring marketing automation, WooCommerce Subscriptions audiences, CRM synchronization or additional messaging channels.
+This plugin does not include multi-step or recurring marketing automation, WooCommerce Subscriptions audiences, CRM synchronization or additional messaging channels.
 
 == Installation ==
 

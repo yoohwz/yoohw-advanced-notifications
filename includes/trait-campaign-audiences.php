@@ -6,21 +6,23 @@ trait YOOHW_AN_Campaign_Audiences {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Authoring callers verify the send nonce.
 		$raw = wp_unslash( $_POST['audience_filters'] ?? [] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Each scalar/list is type checked, sanitized below and strictly validated by validate_audience_filters().
 		$filters = [];
-		$scalar_keys = [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode' ];
+		$scalar_keys = [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'purchase_frequency', 'inactive_days' ];
 		$list_keys = [ 'category_ids', 'order_statuses' ];
 		if ( ! is_array( $raw ) || array_diff( array_keys( $raw ), array_merge( $scalar_keys, $list_keys ) ) ) { return [ 'invalid_input' => true ]; }
 		foreach ( $scalar_keys as $key ) { if ( isset( $raw[ $key ] ) && ! is_string( $raw[ $key ] ) ) { return [ 'invalid_input' => true ]; } }
 		foreach ( $list_keys as $key ) { if ( isset( $raw[ $key ] ) && ( ! is_array( $raw[ $key ] ) || array_filter( $raw[ $key ], static function ( $value ) { return ! is_string( $value ); } ) ) ) { return [ 'invalid_input' => true ]; } }
-		foreach ( [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode' ] as $key ) { $filters[ $key ] = sanitize_text_field( $raw[ $key ] ?? '' ); }
+		foreach ( [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'purchase_frequency', 'inactive_days' ] as $key ) { $filters[ $key ] = sanitize_text_field( $raw[ $key ] ?? '' ); }
 		foreach ( [ 'category_ids', 'order_statuses' ] as $key ) { $filters[ $key ] = array_map( 'sanitize_text_field', (array) ( $raw[ $key ] ?? [] ) ); }
 		return $filters;
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 	}
 	private function validate_audience_filters( $p ) {
 		$f = $p['filters'] ?? [];
-		$invalid = new WP_Error( 'invalid_filters', __( 'Invalid or inapplicable audience conditions. Review source, dates, statuses, category, country and campaign history; no condition has been ignored.', 'yoohw-advanced-notifications' ) );
-		if ( ! is_array( $f ) || array_diff( array_keys( $f ), [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'category_ids', 'order_statuses' ] ) ) { return $invalid; }
+		$invalid = new WP_Error( 'invalid_filters', __( 'Invalid or inapplicable audience conditions. Review source, dates, statuses, category, country, purchase history and campaign history; no condition has been ignored.', 'yoohw-advanced-notifications' ) );
+		if ( ! is_array( $f ) || array_diff( array_keys( $f ), [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'category_ids', 'order_statuses', 'purchase_frequency', 'inactive_days' ] ) ) { return $invalid; }
 		foreach ( [ 'category_ids', 'order_statuses' ] as $key ) { if ( isset( $f[ $key ] ) && ! is_array( $f[ $key ] ) ) { return $invalid; } }
+		if ( ! in_array( $f['purchase_frequency'] ?? '', [ '', 'first', 'repeat' ], true ) ) { return $invalid; }
+		if ( isset( $f['inactive_days'] ) && '' !== $f['inactive_days'] && ( ( ! is_string( $f['inactive_days'] ) && ! is_int( $f['inactive_days'] ) ) || ! ctype_digit( (string) $f['inactive_days'] ) || (int) $f['inactive_days'] < 1 || (int) $f['inactive_days'] > 36500 ) ) { return $invalid; }
 		$source = $p['recipient_source'] ?? '';
 		if ( self::SOURCE_SUBSCRIBED === $source && ( ! empty( $p['product_ids'] ) || ! empty( $p['user_roles'] ) || ! empty( $p['manual_emails'] ) ) ) { return $invalid; }
 		$order_source = in_array( $source, [ self::SOURCE_PRODUCT_CUSTOMERS, self::SOURCE_WOOCOMMERCE_CUSTOMERS, self::SOURCE_SELECTED_ORDERS ], true );
@@ -75,6 +77,7 @@ trait YOOHW_AN_Campaign_Audiences {
 	private function apply_audience_filters( $recipients, $p ) {
 		if ( is_wp_error( $this->validate_audience_filters( $p ) ) ) { return []; }
 		$f = $p['filters'] ?? [];
+		$recipients = $this->apply_purchase_history_filters( $recipients, $f );
 		$result = [];
 		$history = [];
 		if ( ! empty( $f['history_mode'] ) ) {
@@ -135,6 +138,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		$this->render_selected_orders_field( $p );
 		$f = $p['filters'] ?? [];
 		$invalid = is_wp_error( $this->validate_audience_filters( $p ) );
+		$this->render_purchase_history_fields( $f, $invalid );
 		if ( $invalid ) { echo '<p role="alert">' . esc_html__( 'Saved conditions are invalid or unavailable. They remain selected; correct or explicitly remove them before previewing.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Audience conditions', 'yoohw-advanced-notifications' ) . '</h2><div class="an-order-filters"><div class="an-form-grid an-form-grid-three">';
 		foreach ( [ 'date_from' => [ 'date', __( 'Order created from (store timezone)', 'yoohw-advanced-notifications' ) ], 'date_to' => [ 'date', __( 'Through date (inclusive)', 'yoohw-advanced-notifications' ) ], 'last_days' => [ 'number', __( 'Or last N × 24 hours', 'yoohw-advanced-notifications' ) ] ] as $key => $field ) { echo '<div class="an-field"><label>' . esc_html( $field[1] ) . ' <input type="' . esc_attr( $invalid ? 'text' : $field[0] ) . '" name="audience_filters[' . esc_attr( $key ) . ']" value="' . esc_attr( $f[ $key ] ?? '' ) . '"></label></div>'; }
@@ -160,10 +164,11 @@ trait YOOHW_AN_Campaign_Audiences {
 	private function render_audience_summary( $p ) {
 		$f = array_filter( $p['filters'] ?? [], static function ( $value ) { return '' !== $value && [] !== $value; } );
 		if ( ! $f ) { return; }
-		$labels = [ 'date_from' => __( 'Order created from', 'yoohw-advanced-notifications' ), 'date_to' => __( 'Through date', 'yoohw-advanced-notifications' ), 'last_days' => __( 'Last N days', 'yoohw-advanced-notifications' ), 'country' => __( 'Billing country', 'yoohw-advanced-notifications' ), 'subscription' => __( 'Subscription status', 'yoohw-advanced-notifications' ), 'history_campaign' => __( 'History campaign', 'yoohw-advanced-notifications' ), 'history_mode' => __( 'Handoff condition', 'yoohw-advanced-notifications' ), 'category_ids' => __( 'Categories including descendants', 'yoohw-advanced-notifications' ), 'order_statuses' => __( 'Matching order statuses', 'yoohw-advanced-notifications' ) ];
+		$labels = [ 'purchase_frequency' => __( 'Store-wide purchase frequency', 'yoohw-advanced-notifications' ), 'inactive_days' => __( 'Days without a valid store-wide purchase', 'yoohw-advanced-notifications' ), 'date_from' => __( 'Order created from', 'yoohw-advanced-notifications' ), 'date_to' => __( 'Through date', 'yoohw-advanced-notifications' ), 'last_days' => __( 'Last N days', 'yoohw-advanced-notifications' ), 'country' => __( 'Billing country', 'yoohw-advanced-notifications' ), 'subscription' => __( 'Subscription status', 'yoohw-advanced-notifications' ), 'history_campaign' => __( 'History campaign', 'yoohw-advanced-notifications' ), 'history_mode' => __( 'Handoff condition', 'yoohw-advanced-notifications' ), 'category_ids' => __( 'Categories including descendants', 'yoohw-advanced-notifications' ), 'order_statuses' => __( 'Matching order statuses', 'yoohw-advanced-notifications' ) ];
 		echo '<h3>' . esc_html__( 'Saved audience conditions', 'yoohw-advanced-notifications' ) . '</h3><table class="widefat striped">';
 		foreach ( $f as $key => $value ) {
 			$values = (array) $value;
+			if ( 'purchase_frequency' === $key ) { $options = [ 'first' => __( 'First-time buyer (one valid order)', 'yoohw-advanced-notifications' ), 'repeat' => __( 'Repeat buyer (at least two valid orders)', 'yoohw-advanced-notifications' ) ]; $values = [ $options[ $value ] ?? $value ]; }
 			if ( 'order_statuses' === $key ) { $options = $this->get_order_status_options(); $values = array_map( static function ( $status ) use ( $options ) { return $options[ $status ] ?? $status; }, $values ); }
 			if ( 'category_ids' === $key ) { $values = array_map( static function ( $id ) { $term = get_term( (int) $id, 'product_cat' ); return $term && ! is_wp_error( $term ) ? $term->name . ' (#' . $id . ')' : '#' . $id; }, $values ); }
 			echo '<tr><th>' . esc_html( $labels[ $key ] ?? $key ) . '</th><td>' . esc_html( implode( ', ', $values ) ) . '</td></tr>';
@@ -181,7 +186,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		$filtered_common = $this->apply_audience_filters( $filtered, $p );
 		$reason = __( 'Not in the selected source or product purchasers.', 'yoohw-advanced-notifications' );
 		if ( in_array( $email, array_column( $baseline, 'email' ), true ) ) { $reason = __( 'No single order matches all order conditions, or billing country is missing/different.', 'yoohw-advanced-notifications' ); }
-		if ( in_array( $email, array_column( $filtered, 'email' ), true ) ) { $reason = __( 'Subscription status or known campaign handoff condition does not match.', 'yoohw-advanced-notifications' ); }
+		if ( in_array( $email, array_column( $filtered, 'email' ), true ) ) { $reason = __( 'Store-wide purchase history, subscription status or known campaign handoff condition does not match.', 'yoohw-advanced-notifications' ); }
 		if ( in_array( $email, array_column( $filtered_common, 'email' ), true ) ) { $reason = __( 'Matched source and all conditions; removed by an explicit exclusion.', 'yoohw-advanced-notifications' ); }
 		if ( in_array( $email, array_column( $this->get_recipients_by_payload( $p ), 'email' ), true ) ) { $reason = __( 'Included: matches source and every applicable condition; no exclusion matched.', 'yoohw-advanced-notifications' ); }
 		if ( $this->is_email_unsubscribed( $email ) ) { $reason = __( 'Excluded: durable unsubscribe/suppression.', 'yoohw-advanced-notifications' ); }

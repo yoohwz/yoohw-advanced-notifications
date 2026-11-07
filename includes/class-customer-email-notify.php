@@ -14,6 +14,9 @@ require_once __DIR__ . '/trait-campaign-personalization.php';
 require_once __DIR__ . '/trait-campaign-subscriptions.php';
 require_once __DIR__ . '/trait-campaign-checkout.php';
 require_once __DIR__ . '/trait-campaign-contact-history.php';
+require_once __DIR__ . '/trait-campaign-purchase-history.php';
+require_once __DIR__ . '/trait-campaign-automations.php';
+require_once __DIR__ . '/trait-campaign-automation-ui.php';
 
 class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Reliability;
@@ -26,6 +29,9 @@ class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Subscriptions;
 	use YOOHW_AN_Campaign_Checkout;
 	use YOOHW_AN_Campaign_Contact_History;
+	use YOOHW_AN_Campaign_Purchase_History;
+	use YOOHW_AN_Campaign_Automations;
+	use YOOHW_AN_Campaign_Automation_UI;
 
 	const ACTION_SEND_SINGLE_EMAIL = 'yoohw_an_send_single_email';
 	const ACTION_UNSUBSCRIBE       = 'yoohw_an_unsubscribe';
@@ -67,6 +73,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	private $current_from_name  = '';
 	private $last_mail_error    = '';
 	private $mail_handoff_started = false;
+	private $last_automation_outcome = '';
 	private $current_action_id = 0;
 	private $recovery_enabled = true;
 	private $campaign_payload_cache = [];
@@ -76,6 +83,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$this->register_operator_features();
 		$this->register_contextual_entrypoints();
 		$this->register_subscriptions();
+		$this->register_automations();
 		// Register after WooCommerce sorts Marketing at priority 99 to preserve our position.
 		add_action( 'admin_menu', [ $this, 'add_submenu' ], 100 );
 		add_action( 'admin_post_yoohw_an_send_product_customer_email', [ $this, 'handle_send_email' ] );
@@ -156,6 +164,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	public function deactivate() {
 		$this->recovery_enabled = false;
+		$this->register_automation_manifests();
 		$this->block_campaigns_on_deactivation();
 		wp_unschedule_hook( self::ACTION_RECONCILE_CAMPAIGNS );
 		wp_unschedule_hook( self::ACTION_SEND_SINGLE_EMAIL );
@@ -189,6 +198,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	public function reconcile_open_campaigns( $campaign_id = '' ) {
+		$this->reconcile_automation_campaigns();
 		$campaigns = $this->get_campaign_history();
 		$campaign_id = sanitize_text_field( $campaign_id );
 
@@ -795,6 +805,8 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'campaign'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only admin navigation, filters and notices; no state is changed.
 
+		if ( 'automations' === $active_tab ) { $this->render_automations_page(); return; }
+
 		if ( 'library' === $active_tab ) {
 			$this->render_library_page();
 			return;
@@ -1309,6 +1321,7 @@ class YOOHW_AN_Customer_Email_Notify {
 		$tabs = [
 			'campaigns' => [ 'label' => __( 'Campaigns', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'campaigns' ] ) ],
 			'campaign' => [ 'label' => __( 'Compose', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url() ],
+			'automations' => [ 'label' => __( 'Automations', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'automations' ] ) ],
 			'library' => [ 'label' => __( 'Library', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'library' ] ) ],
 			'subscribers' => [ 'label' => __( 'Subscribers', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'subscribers' ] ) ],
 			'settings' => [ 'label' => __( 'Settings', 'yoohw-advanced-notifications' ), 'url' => $this->get_admin_page_url( [ 'tab' => 'settings' ] ) ],
@@ -2493,7 +2506,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_invalid_shared_payload', __( 'Campaign content or sender details are incomplete.', 'yoohw-advanced-notifications' ) );
 		}
 
-		if ( self::SOURCE_SUBSCRIBED === ( $payload['recipient_source'] ?? '' ) ) { $email_payload['subscription_required'] = true; }
+		if ( self::SOURCE_SUBSCRIBED === ( $payload['recipient_source'] ?? '' ) || ! empty( $payload['automation'] ) ) { $email_payload['subscription_required'] = true; }
+		if ( ! empty( $payload['automation'] ) ) { $email_payload['automation'] = $payload['automation']; }
 		if ( ! empty( $payload['personalization_version'] ) ) { $email_payload['personalization_version'] = absint( $payload['personalization_version'] ); $email_payload['store_name'] = sanitize_text_field( $payload['store_name'] ?? get_bloginfo( 'name' ) ); }
 
 		$payload_hash = hash( 'sha256', wp_json_encode( $email_payload ) );
@@ -2573,7 +2587,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$this->campaign_payload_cache[ $payload_key ] = $record;
 
-		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'personalization_version', 'store_name', 'subscription_required' ] as $field ) {
+		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'personalization_version', 'store_name', 'subscription_required', 'automation' ] as $field ) {
 			$args[ $field ] = isset( $record['payload'][ $field ] ) ? $record['payload'][ $field ] : '';
 		}
 
@@ -3095,7 +3109,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			]
 		);
 
-		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'schedule_summary', 'order_ids', 'personalization_version', 'store_name' ] as $field ) { if ( isset( $payload[ $field ] ) ) { $entry[ $field ] = $payload[ $field ]; } }
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'schedule_summary', 'order_ids', 'personalization_version', 'store_name', 'automation' ] as $field ) { if ( isset( $payload[ $field ] ) ) { $entry[ $field ] = $payload[ $field ]; } }
 		$entry['status_counts'] = isset( $existing['status_counts'] ) && is_array( $existing['status_counts'] )
 			? $this->sanitize_count_map( $existing['status_counts'] )
 			: [];
@@ -3347,7 +3361,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			'exclusion_labels'       => isset( $campaign['exclusion_labels'] ) && is_array( $campaign['exclusion_labels'] ) ? $this->sanitize_text_list( $campaign['exclusion_labels'] ) : [],
 		];
 
-		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'order_ids', 'personalization_version', 'store_name' ] as $field ) { if ( isset( $campaign[ $field ] ) ) { $payload[ $field ] = $campaign[ $field ]; } }
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'order_ids', 'personalization_version', 'store_name', 'automation' ] as $field ) { if ( isset( $campaign[ $field ] ) ) { $payload[ $field ] = $campaign[ $field ]; } }
 		if ( empty( $payload['products_label'] ) ) {
 			$payload['products_label'] = ! empty( $payload['product_ids'] )
 				? $this->get_selected_products_label( $payload['product_ids'] )
@@ -3920,6 +3934,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function get_recipient_scheduled_delivery( $payload, $recipient, $roll_forward = true, $reference_time = null ) {
+		if ( ! empty( $payload['automation']['due'] ) ) { return [ 'timestamp' => (int) $payload['automation']['due'], 'timezone' => 'UTC', 'fallback' => false, 'country' => '', 'state' => '', 'city' => '', 'rolled_forward_days' => 0 ]; }
 		if ( isset( $payload['schedule_policy'] ) ) { return $this->operator_schedule( $payload, $recipient ); }
 		$reference_time = null === $reference_time ? time() : absint( $reference_time );
 		$country       = isset( $recipient['country'] ) ? $this->normalize_country_code( $recipient['country'] ) : '';
@@ -4917,6 +4932,11 @@ class YOOHW_AN_Customer_Email_Notify {
 			return;
 		}
 		try {
+			$automation_check = $this->automation_delivery_check( $args );
+			if ( is_wp_error( $automation_check ) ) {
+				$outcome = 'automation_cancelled' === $automation_check->get_error_code() ? 'cancelled' : ( 'automation_ineligible' === $automation_check->get_error_code() ? 'skipped' : 'failed' );
+				$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, $outcome, $automation_check->get_error_message(), 'failed' === $outcome ? 'configuration' : '' ); return;
+			}
 			if ( ! empty( $args['subscription_required'] ) && 'subscribed' !== $this->subscription_record( $to )['status'] ) {
 				$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'skipped_unsubscribed', __( 'No active subscription before send.', 'yoohw-advanced-notifications' ) );
 				return;
@@ -4930,8 +4950,9 @@ class YOOHW_AN_Customer_Email_Notify {
 				return;
 			}
 			$this->mail_handoff_started = false;
-			$sent = $this->send_woocommerce_email( $to, $personal['subject'], $personal['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '', ! empty( $args['subscription_required'] ) );
+			$sent = $this->send_woocommerce_email( $to, $personal['subject'], $personal['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '', ! empty( $args['subscription_required'] ), $args['automation'] ?? [] );
 			$status = $sent ? 'sent' : ( $this->mail_handoff_started ? 'unknown' : ( ( $this->is_email_unsubscribed( $to ) || ( ! empty( $args['subscription_required'] ) && 'subscribed' !== $this->subscription_record( $to )['status'] ) ) ? 'skipped_unsubscribed' : 'failed' ) );
+			if ( ! $sent && ! $this->mail_handoff_started && $this->last_automation_outcome ) { $status = $this->last_automation_outcome; }
 			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, $status,
 				$sent ? __( 'Mail system accepted the request; inbox delivery is not verified.', 'yoohw-advanced-notifications' ) : ( $this->last_mail_error ?: __( 'Mail transport returned no confirmation. Check the mail provider before sending again.', 'yoohw-advanced-notifications' ) ),
 				$sent ? '' : ( $this->mail_handoff_started ? 'transport' : 'configuration' )
@@ -5274,12 +5295,23 @@ class YOOHW_AN_Customer_Email_Notify {
 		return class_exists( 'WC_Email' ) ? new WC_Email() : null;
 	}
 
-	private function send_woocommerce_email( $to, $subject, $heading, $message, $from_email = '', $from_name = '', $reply_to_email = '', $require_subscription = false ) {
+	private function send_woocommerce_email( $to, $subject, $heading, $message, $from_email = '', $from_name = '', $reply_to_email = '', $require_subscription = false, $automation = [], $sample_email_hash = '' ) {
+		$this->last_automation_outcome = '';
 		$email_body = $this->build_woocommerce_email_body( $heading, $message );
 
 		if ( false === $email_body ) {
 			$this->last_mail_error = __( 'WooCommerce mailer is unavailable.', 'yoohw-advanced-notifications' );
 			return false;
+		}
+
+		if ( $sample_email_hash && $this->read_durable_option( 'yoohw_an_erased_' . $sample_email_hash ) ) {
+			$this->last_mail_error = __( 'The sample was erased before test mail handoff.', 'yoohw-advanced-notifications' ); return false;
+		}
+
+		$check = $this->automation_delivery_check( [ 'automation' => $automation, 'to' => $to ] );
+		if ( is_wp_error( $check ) ) {
+			$this->last_automation_outcome = 'automation_cancelled' === $check->get_error_code() ? 'cancelled' : ( 'automation_ineligible' === $check->get_error_code() ? 'skipped' : 'failed' );
+			$this->last_mail_error = $check->get_error_message(); return false;
 		}
 
 		if ( $require_subscription && 'subscribed' !== $this->subscription_record( $to )['status'] ) {
