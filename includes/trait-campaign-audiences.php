@@ -22,9 +22,10 @@ trait YOOHW_AN_Campaign_Audiences {
 		if ( ! is_array( $f ) || array_diff( array_keys( $f ), [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'category_ids', 'order_statuses' ] ) ) { return $invalid; }
 		foreach ( [ 'category_ids', 'order_statuses' ] as $key ) { if ( isset( $f[ $key ] ) && ! is_array( $f[ $key ] ) ) { return $invalid; } }
 		$source = $p['recipient_source'] ?? '';
+		if ( self::SOURCE_SUBSCRIBED === $source && ( ! empty( $p['product_ids'] ) || ! empty( $p['user_roles'] ) || ! empty( $p['manual_emails'] ) ) ) { return $invalid; }
 		$order_source = in_array( $source, [ self::SOURCE_PRODUCT_CUSTOMERS, self::SOURCE_WOOCOMMERCE_CUSTOMERS, self::SOURCE_SELECTED_ORDERS ], true );
 		foreach ( [ 'date_from', 'date_to', 'last_days', 'category_ids', 'order_statuses' ] as $field ) { if ( ! $order_source && ! empty( $f[ $field ] ) ) { return $invalid; } }
-		if ( self::SOURCE_MANUAL_EMAILS === $source && ! empty( $f['country'] ) ) { return $invalid; }
+		if ( in_array( $source, [ self::SOURCE_MANUAL_EMAILS, self::SOURCE_SUBSCRIBED ], true ) && ! empty( $f['country'] ) ) { return $invalid; }
 		foreach ( [ 'date_from', 'date_to' ] as $field ) {
 			if ( isset( $f[ $field ] ) && '' !== $f[ $field ] ) {
 				$date = DateTimeImmutable::createFromFormat( '!Y-m-d', $f[ $field ], wp_timezone() );
@@ -65,8 +66,11 @@ trait YOOHW_AN_Campaign_Audiences {
 		return true;
 	}
 	private function subscription_record( $email ) {
-		if ( $this->is_email_unsubscribed( $email ) ) { return [ 'status' => 'unsubscribed', 'source' => 'suppression' ]; }
-		return $this->read_durable_option( 'yoohw_an_subscription_' . hash( 'sha256', strtolower( $email ) ) ) ?: [ 'status' => 'unknown', 'source' => '', 'recorded_at' => 0 ];
+		$email = strtolower( $email );
+		$record = $this->is_email_unsubscribed( $email ) ? [ 'status' => 'unsubscribed', 'source' => 'suppression' ] : ( $this->read_durable_option( 'yoohw_an_subscription_' . hash( 'sha256', $email ) ) ?: [ 'status' => 'unknown', 'source' => '', 'recorded_at' => 0 ] );
+		$pending = $this->read_durable_option( 'yoohw_an_signup_' . hash( 'sha256', $email ) );
+		if ( is_array( $pending ) && ( $pending['email'] ?? '' ) === $email && ! empty( $pending['token_hash'] ) && ( $pending['expires'] ?? 0 ) > time() ) { $record['confirmation_pending'] = true; $record['request_source'] = $pending['source']; $record['requested_at'] = $pending['requested_at']; }
+		return $record;
 	}
 	private function apply_audience_filters( $recipients, $p ) {
 		if ( is_wp_error( $this->validate_audience_filters( $p ) ) ) { return []; }

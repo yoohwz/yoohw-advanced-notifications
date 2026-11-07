@@ -120,6 +120,7 @@ trait YOOHW_AN_Campaign_Privacy {
 	private function render_subscribers_page() {
 		echo '<div class="wrap yoohw-an-workspace"><h1>' . esc_html__( 'Email campaigns', 'yoohw-advanced-notifications' ) . '</h1>';
 		$this->render_page_tabs( 'subscribers' );
+		$this->render_contact_history();
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Subscribers and suppression', 'yoohw-advanced-notifications' ) . '</h2><p>' . esc_html__( 'An order, account or pasted email is not opt-in evidence. Unknown remains unknown. Imports never remove an unsubscribe. For subscribed records, enter the actual evidence source; the recorded time is the import time, not an inferred original consent time.', 'yoohw-advanced-notifications' ) . '</p>';
 		$search = strtolower( sanitize_text_field( wp_unslash( $_GET['subscription_search'] ?? '' ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		echo '<form class="an-filter-form" method="get"><input type="hidden" name="page" value="yoohw-advanced-notifications"><input type="hidden" name="tab" value="subscribers"><label class="an-field">' . esc_html__( 'Find subscription or suppression', 'yoohw-advanced-notifications' ) . ' <input name="subscription_search" value="' . esc_attr( $search ) . '"></label><label class="an-field an-field-compact">' . esc_html__( 'State', 'yoohw-advanced-notifications' ) . ' <select name="subscription_state">';
@@ -129,7 +130,7 @@ trait YOOHW_AN_Campaign_Privacy {
 		$records = [];
 		foreach ( $this->read_durable_options( 'yoohw_an_subscription_' ) as $record ) { if ( ! empty( $record['email'] ) ) { $records[ $record['email'] ] = $record; } }
 		foreach ( $this->get_unsubscribed_emails() as $email => $record ) { $records[ $email ] = array_merge( (array) $record, $records[ $email ] ?? [], [ 'status' => 'unsubscribed' ] ); }
-		if ( is_email( $search ) && ! isset( $records[ $search ] ) ) { $records[ $search ] = $this->subscription_record( $search ); }
+		if ( is_email( $search ) ) { $records[ $search ] = $this->subscription_record( $search ); }
 		$count = 0;
 		foreach ( $records as $email => $record ) {
 			if ( $search && false === strpos( strtolower( $email . ' ' . ( $record['source'] ?? '' ) ), $search ) ) { continue; }
@@ -137,6 +138,7 @@ trait YOOHW_AN_Campaign_Privacy {
 			if ( ++$count > 200 ) { break; }
 			$timestamp = $record['recorded_at'] ?? ( $record['unsubscribed_at'] ?? 0 );
 			echo '<tr><td>' . esc_html( $email . ' / ' . $record['status'] ) . '</td><td>' . esc_html( ( $record['source'] ?? 'legacy/unsubscribe' ) . ' / ' . ( $timestamp ? gmdate( 'Y-m-d H:i:s', is_numeric( $timestamp ) ? (int) $timestamp : strtotime( $timestamp ) ) : '—' ) ) . '</td></tr>';
+			if ( ! empty( $record['confirmation_pending'] ) ) { echo '<tr><td colspan="2">' . esc_html__( 'Confirmation pending; current subscription unchanged.', 'yoohw-advanced-notifications' ) . ' ' . esc_html( $record['request_source'] . ' / ' . gmdate( 'Y-m-d H:i:s', $record['requested_at'] ) ) . '</td></tr>'; }
 		} echo '</table><p>' . esc_html__( 'Up to 200 matches. Erased addresses are represented only by protective hashes and are not listed as plaintext.', 'yoohw-advanced-notifications' ) . '</p>';
 		echo '</section><section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Import records', 'yoohw-advanced-notifications' ) . '</h2><p>' . esc_html__( '1. Paste → 2. Preview → 3. Apply and review result', 'yoohw-advanced-notifications' ) . '</p><form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '"><input type="hidden" name="action" value="yoohw_an_data"><input type="hidden" name="operation" value="preview_import">'; wp_nonce_field( 'yoohw_an_data' );
 		echo '<div class="an-field"><label>' . esc_html__( 'One email per line', 'yoohw-advanced-notifications' ) . '<textarea name="import_emails" rows="5" cols="55"></textarea></label></div><div class="an-form-grid"><label class="an-field">' . esc_html__( 'Status', 'yoohw-advanced-notifications' ) . ' <select name="subscription_status">';
@@ -186,6 +188,8 @@ trait YOOHW_AN_Campaign_Privacy {
 		}
 		if ( 1 === (int) $page ) {
 			$record = $this->subscription_record( $email );
+			$pending = $this->read_durable_option( 'yoohw_an_signup_' . $hash );
+			if ( is_array( $pending ) && ( $pending['email'] ?? '' ) === $email ) { $record['pending_request'] = array_intersect_key( $pending, array_flip( [ 'source', 'requested_at', 'expires', 'consumed_at' ] ) ); }
 			$record['suppression_evidence'] = $this->read_durable_option( 'yoohw_an_optout_' . $hash ) ?: ( $this->get_unsubscribed_emails()[ $email ] ?? [] );
 			$record['protective_erasure_hash'] = (bool) $this->read_durable_option( 'yoohw_an_erased_' . $hash );
 			$data[] = [ 'group_id' => 'yoohw-an', 'group_label' => __( 'Email campaigns', 'yoohw-advanced-notifications' ), 'item_id' => 'yoohw-an-subscription', 'data' => [ [ 'name' => __( 'Subscription and protection', 'yoohw-advanced-notifications' ), 'value' => wp_json_encode( $record ) ] ] ];
