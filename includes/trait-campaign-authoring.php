@@ -11,9 +11,9 @@ trait YOOHW_AN_Campaign_Authoring {
 		add_action( self::ACTION_RECONCILE_CAMPAIGNS, [ $this, 'cleanup_retention' ], 30 );
 	}
 	private function draft_fields() {
-		return [ 'internal_name', 'subject', 'heading', 'message', 'recipient_source', 'product_ids', 'user_roles', 'manual_emails', 'manual_emails_raw', 'exclusions', 'exclude_emails_raw', 'schedule_mode', 'scheduled_at_input', 'filters', 'test_email' ];
+		return [ 'order_ids', 'personalization_version', 'internal_name', 'subject', 'heading', 'message', 'recipient_source', 'product_ids', 'user_roles', 'manual_emails', 'manual_emails_raw', 'exclusions', 'exclude_emails_raw', 'schedule_mode', 'scheduled_at_input', 'filters', 'test_email' ];
 	}
-	private function criteria_fields() { return [ 'recipient_source', 'product_ids', 'user_roles', 'manual_emails', 'manual_emails_raw', 'exclusions', 'exclude_emails_raw', 'filters' ]; }
+	private function criteria_fields() { return [ 'order_ids', 'recipient_source', 'product_ids', 'user_roles', 'manual_emails', 'manual_emails_raw', 'exclusions', 'exclude_emails_raw', 'filters' ]; }
 	private function save_draft( $payload, $id = '' ) {
 		$id = $id ?: ( $payload['draft_id'] ?? wp_generate_uuid4() );
 		$key = 'yoohw_an_draft_' . sanitize_key( $id );
@@ -36,6 +36,10 @@ trait YOOHW_AN_Campaign_Authoring {
 		$p['manual_emails'] = preg_split( '/[\s,;]+/', $p['manual_emails_raw'], -1, PREG_SPLIT_NO_EMPTY );
 		$p['exclude_emails_raw'] = sanitize_textarea_field( $post['exclude_emails'] ?? '' );
 		$p['exclusions'] = [ 'product_ids' => array_map( 'absint', (array) ( $post['exclude_product_ids'] ?? [] ) ), 'order_statuses' => array_map( 'sanitize_key', (array) ( $post['exclude_order_statuses'] ?? [] ) ), 'emails' => $this->parse_email_list( $p['exclude_emails_raw'] ) ];
+		$p['order_ids'] = $this->parse_selected_order_ids( $post['order_ids'] ?? '' );
+		if ( is_wp_error( $p['order_ids'] ) ) { wp_die( esc_html( $p['order_ids']->get_error_message() ) ); }
+		$p['personalization_version'] = 1;
+		$p['store_name'] = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
 		$p['filters'] = $this->filters_from_request();
 		return $p;
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
@@ -60,6 +64,12 @@ trait YOOHW_AN_Campaign_Authoring {
 	private function extend_authoring_payload( $p ) {
 		$p['internal_name'] = sanitize_text_field( wp_unslash( $_POST['internal_name'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Caller verifies nonce.
 		$p['filters'] = $this->filters_from_request();
+		$p['order_ids'] = $this->parse_selected_order_ids( wp_unslash( $_POST['order_ids'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Caller verifies nonce.
+		if ( is_wp_error( $p['order_ids'] ) ) { return $p['order_ids']; }
+		$p['personalization_version'] = 1;
+		$p['store_name'] = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+		$valid = $this->validate_selected_orders( $p );
+		if ( is_wp_error( $valid ) ) { return $valid; }
 		$p['schedule_policy'] = 'strict_v1';
 		$p['store_timezone'] = wp_timezone_string();
 		$valid = $this->validate_audience_filters( $p );
@@ -146,9 +156,9 @@ trait YOOHW_AN_Campaign_Authoring {
 	private function render_content_templates() {
 		echo '<section class="yoohw-advanced-notifications-panel an-template-field"><label for="an-template">' . esc_html__( 'Insert editable content template', 'yoohw-advanced-notifications' ) . '</label><p><select id="an-template"><option value="">—</option>';
 		$templates = [
-			'update' => [ __( 'Product or documentation update', 'yoohw-advanced-notifications' ), __( 'An update for you', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>We have updated {product_name}. Add the details and documentation link here.</p>', 'yoohw-advanced-notifications' ) ],
-			'guide' => [ __( 'After-purchase guide', 'yoohw-advanced-notifications' ), __( 'Getting started', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>Thank you for your purchase. Add setup steps and support details here.</p>', 'yoohw-advanced-notifications' ) ],
-			'service' => [ __( 'Service or order change', 'yoohw-advanced-notifications' ), __( 'Service update', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>Add the change, effective date and any action needed here.</p>', 'yoohw-advanced-notifications' ) ],
+			'update' => [ __( 'Product or documentation update', 'yoohw-advanced-notifications' ), __( 'An update for you', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>We have updated {product_name}. Describe what changed, when it applies, and add the documentation link and any action needed. Contact our support team if you need help.</p>', 'yoohw-advanced-notifications' ) ],
+			'guide' => [ __( 'After-purchase guide', 'yoohw-advanced-notifications' ), __( 'Getting started', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>Thank you for your purchase of {ordered_products} (order {order_number}). Add setup or care steps, when to follow them, and a support contact here.</p>', 'yoohw-advanced-notifications' ) ],
+			'service' => [ __( 'Service or order change', 'yoohw-advanced-notifications' ), __( 'Service update', 'yoohw-advanced-notifications' ), __( '<p>Hello {customer_name},</p><p>An update about order {order_number}: describe the change and the new delivery date or effective time. Explain any action needed and add a support contact here.</p>', 'yoohw-advanced-notifications' ) ],
 		];
 		foreach ( $templates as $key => $template ) { echo '<option value="' . esc_attr( $key ) . '" data-subject="' . esc_attr( $template[1] ) . '" data-body="' . esc_attr( $template[2] ) . '">' . esc_html( $template[0] ) . '</option>'; }
 		echo '</select></p></section>';
@@ -238,9 +248,12 @@ trait YOOHW_AN_Campaign_Authoring {
 			foreach ( $p['recipient_sample'] as $i => $recipient ) { echo '<option value="' . esc_attr( $i ) . '" ' . selected( $sample['email'], $recipient['email'], false ) . '>' . esc_html( $recipient['email'] ) . '</option>'; }
 			echo '</select></div><button class="button">' . esc_html__( 'Show sample', 'yoohw-advanced-notifications' ) . '</button></form>';
 			$this->render_preview_device_controls();
-			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $sample['name'] ?: $sample['email'], $p['products_label'] ?? '' ], $p['message'] );
+			$personal = $this->render_personalized_email( $p, $sample );
+			echo '<p>' . esc_html( $personal['subject'] ) . '</p>';
+			$this->render_order_context_summary( $sample );
+			$message = $personal['message'];
 			$message = $this->append_unsubscribe_footer( $message, $sample['email'], $p['campaign_id'] );
-			$html = $this->build_woocommerce_email_body( $p['heading'], $message );
+			$html = $this->build_woocommerce_email_body( $personal['heading'], $message );
 			echo '<iframe class="an-personal-preview" sandbox="" title="' . esc_attr__( 'Personalized email preview', 'yoohw-advanced-notifications' ) . '" srcdoc="' . esc_attr( $html ) . '"></iframe></section>';
 		}
 	}

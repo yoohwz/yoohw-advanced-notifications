@@ -45,7 +45,7 @@ try {
 	$table = $call( 'get_recipient_tracking_table_name' );
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Verify the custom-table schema directly in the disposable test database.
 	$assert( 'tracking_table_installed', $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) );
-	$assert( 'four_local_recipient_sources', [ 'product_customers', 'woocommerce_customers', 'registered_users', 'manual_emails' ] === array_keys( $call( 'get_recipient_sources' ) ) );
+	$assert( 'five_local_recipient_sources', [ 'selected_orders', 'product_customers', 'woocommerce_customers', 'registered_users', 'manual_emails' ] === array_keys( $call( 'get_recipient_sources' ) ) );
 	$assert( 'unsupported_stored_source_is_empty', [] === $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'current_subscribers' ] ) );
 	update_option( 'woocommerce_email_from_address', 'store@example.com' );
 	update_option( 'woocommerce_email_from_name', 'Test Store' );
@@ -176,6 +176,12 @@ try {
 	$_POST['schedule_mode'] = 'scheduled';
 	$_POST['scheduled_at'] = '2027-02-30T10:00';
 	$assert( 'invalid_calendar_date_rejected', is_wp_error( $call( 'get_payload_from_request' ) ) );
+	// Exercise pre-AN-5 jobs, which have shared content but no confirmed context manifest.
+	// Modern confirmed dispatch is covered end to end in contextual-campaigns.php.
+	unset( $payload['personalization_version'], $payload['store_name'] );
+	$legacy_campaign = $call( 'get_campaign_history' )[ $campaign_id ];
+	unset( $legacy_campaign['personalization_version'], $legacy_campaign['store_name'] );
+	$call( 'save_campaign_record', $legacy_campaign );
 	$payload['campaign_id'] = $campaign_id;
 	$payload['message'] .= str_repeat( '<p>Shared rich email content.</p>', 2000 );
 	$recipient = [ 'email' => 'delivery-' . $tag . '@example.com', 'name' => 'Fixture Recipient', 'country' => 'VN' ];

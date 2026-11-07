@@ -26,10 +26,11 @@
 			$row.toggle(applicable || hasValue).toggleClass('an-inapplicable-selection', !applicable && hasValue);
 			$row.find(':input').prop('disabled', false);
 		}
+		revealApplicable('.an-selected-orders', source === 'selected_orders');
 		revealApplicable('#yoohw-advanced-notifications-products-row', product);
 		revealApplicable('#yoohw-advanced-notifications-roles-row', registered);
 		revealApplicable('#yoohw-advanced-notifications-manual-row', manual);
-		revealApplicable('.an-order-filters', product || source === yoohwAN.customersSource);
+		revealApplicable('.an-order-filters', product || source === yoohwAN.customersSource || source === 'selected_orders');
 		revealApplicable('.an-country-filter', !manual);
 		$('#yoohw-advanced-notifications-customers-row').toggle(source === yoohwAN.customersSource);
 		$('.an-incompatible-help').prop('hidden', !$('.an-inapplicable-selection').length);
