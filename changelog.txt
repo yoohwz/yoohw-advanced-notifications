@@ -1,0 +1,43 @@
+=== Advanced Notifications for WooCommerce - Changelog ===
+
+= 0.4.0 =
+* Add product and order email entry points that create scoped drafts, with HPOS and posts order storage support.
+* Personalize new campaign subjects, headings and bodies with frozen customer, store and representative-order context; preserve already-confirmed campaigns.
+* Add verified subscriptions through a signup shortcode, Classic Checkout, Checkout Blocks and My Account without treating purchase or account creation as consent.
+* Add per-email contact history lookup with retained outcomes, reasons and campaign links.
+* Add store-wide first-time, repeat-buyer and purchase-inactivity filters for campaigns and saved audiences.
+* Add explicitly enabled Completed-order guides with product/category conditions, a fixed delay and one immutable delivery per rule/order.
+* Recheck rule, order, subscription, suppression and erasure before guide handoff; preserve cancellation, duplicate protection and unknown-outcome boundaries.
+* Align automation authoring with the four-step composer, live Desktop/Mobile previews and exact-order preview/test; hide stale samples after edits.
+* Fix Library warnings when optional draft or saved-audience names are missing.
+
+= 0.3.0 =
+* Rename the plugin to Advanced Notifications for WooCommerce; keep the existing slug, text domain and stored data.
+* Add individual campaign controls and shared sending admission limits.
+* Add durable drafts, duplication, content templates and personalized previews.
+* Add source-aware saved audiences and explicit timezone scheduling.
+* Add subscription/suppression administration, privacy callbacks and terminal retention.
+* Preserve erased data boundaries, known-unsent history and cancellation during concurrent recovery.
+* Unify campaign forms with the admin color scheme, SelectWoo fields and desktop/mobile preview controls.
+* Harden confirmed recipient snapshots, duplicate protection, bounded retries and interrupted-work recovery.
+
+= 0.2.2 =
+* Align the translation domain with the WordPress.org slug yoohw-advanced-notifications.
+* Resolve Plugin Check findings for SQL identifiers, input handling, test fixtures and plugin metadata.
+* Load admin JavaScript and CSS from separate files with WordPress dependencies.
+
+= 0.2.1 =
+* Register the languages directory on init and include a POT translation template.
+* Make remaining delivery messages and status labels translatable.
+* Add translator notes and translation setup instructions.
+
+= 0.2.0 =
+* Add WooCommerce customers and Manual email list recipient sources.
+* Add multi-role filtering for registered users, including preview and campaign history.
+* Preserve recipient selections when restoring drafts and retrying failed schedules.
+* Use native JavaScript trim() for the live preview.
+
+= 0.1.0 =
+* Extract standalone customer email campaigns from YoOhw Extra Code.
+* Remove WooCommerce Subscriptions audiences and exclusions, and Audience sync integration.
+* Isolate plugin storage/hooks and use the current store's sender defaults.
