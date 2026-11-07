@@ -21,7 +21,7 @@ trait YOOHW_AN_Campaign_Entrypoints {
 
 	public function contextual_product_row_action( $actions, $post ) {
 		if ( 'product' === $post->post_type && current_user_can( 'manage_woocommerce' ) && current_user_can( 'edit_post', $post->ID ) ) {
-			$actions['yoohw_an_draft'] = '<a href="' . esc_url( $this->contextual_draft_url( 'product', $post->ID ) ) . '">' . esc_html__( 'Email purchasers (draft)', 'yoohw-advanced-notifications' ) . '</a>';
+			$actions['yoohw_an_draft'] = '<a href="' . esc_url( $this->contextual_draft_url( 'product', $post->ID ) ) . '">' . esc_html__( 'Email purchasers', 'yoohw-advanced-notifications' ) . '</a>';
 		}
 		return $actions;
 	}
@@ -29,24 +29,24 @@ trait YOOHW_AN_Campaign_Entrypoints {
 	public function contextual_product_edit_action() {
 		global $post;
 		if ( $post instanceof WP_Post && 'product' === $post->post_type && current_user_can( 'manage_woocommerce' ) && current_user_can( 'edit_post', $post->ID ) ) {
-			echo '<div class="misc-pub-section"><a href="' . esc_url( $this->contextual_draft_url( 'product', $post->ID ) ) . '">' . esc_html__( 'Email purchasers (draft)', 'yoohw-advanced-notifications' ) . '</a><p class="description">' . esc_html__( 'A parent product includes all its variations. Opening a draft sends no email.', 'yoohw-advanced-notifications' ) . '</p></div>';
+			echo '<div class="misc-pub-section"><a href="' . esc_url( $this->contextual_draft_url( 'product', $post->ID ) ) . '">' . esc_html__( 'Email purchasers', 'yoohw-advanced-notifications' ) . '</a><p class="description">' . esc_html__( 'A parent product includes all its variations. Opening a draft sends no email.', 'yoohw-advanced-notifications' ) . '</p></div>';
 		}
 	}
 
 	public function contextual_variation_action( $loop, $variation_data, $variation ) {
 		if ( current_user_can( 'manage_woocommerce' ) && current_user_can( 'edit_post', $variation->ID ) ) {
-			echo '<p class="form-row form-row-full"><a href="' . esc_url( $this->contextual_draft_url( 'product', $variation->ID ) ) . '">' . esc_html__( 'Email purchasers of this variation (draft)', 'yoohw-advanced-notifications' ) . '</a></p>';
+			echo '<p class="form-row form-row-full"><a href="' . esc_url( $this->contextual_draft_url( 'product', $variation->ID ) ) . '">' . esc_html__( 'Email purchasers of this variation', 'yoohw-advanced-notifications' ) . '</a></p>';
 		}
 	}
 
 	public function contextual_order_edit_action( $order_id ) {
 		if ( current_user_can( 'manage_woocommerce' ) && $this->contextual_can_edit_order( $order_id ) ) {
-			echo '<li class="wide"><a href="' . esc_url( $this->contextual_draft_url( 'order', $order_id ) ) . '">' . esc_html__( 'Email this customer (draft)', 'yoohw-advanced-notifications' ) . '</a></li>';
+			echo '<li class="wide"><a href="' . esc_url( $this->contextual_draft_url( 'order', $order_id ) ) . '">' . esc_html__( 'Email this customer', 'yoohw-advanced-notifications' ) . '</a></li>';
 		}
 	}
 
 	public function contextual_order_bulk_action( $actions ) {
-		if ( current_user_can( 'manage_woocommerce' ) ) { $actions['yoohw_an_draft'] = __( 'Email selected orders (draft)', 'yoohw-advanced-notifications' ); }
+		if ( current_user_can( 'manage_woocommerce' ) ) { $actions['yoohw_an_draft'] = __( 'Email selected orders', 'yoohw-advanced-notifications' ); }
 		return $actions;
 	}
 

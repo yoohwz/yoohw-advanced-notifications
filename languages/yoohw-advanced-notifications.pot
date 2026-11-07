@@ -1904,7 +1904,7 @@ msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:24
 #: includes/trait-campaign-entrypoints.php:32
-msgid "Email purchasers (draft)"
+msgid "Email purchasers"
 msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:32
@@ -1912,15 +1912,15 @@ msgid "A parent product includes all its variations. Opening a draft sends no em
 msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:38
-msgid "Email purchasers of this variation (draft)"
+msgid "Email purchasers of this variation"
 msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:44
-msgid "Email this customer (draft)"
+msgid "Email this customer"
 msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:49
-msgid "Email selected orders (draft)"
+msgid "Email selected orders"
 msgstr ""
 
 #: includes/trait-campaign-entrypoints.php:62
