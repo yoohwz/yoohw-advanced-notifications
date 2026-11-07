@@ -143,6 +143,7 @@
 		}
 
 		editor.on('keyup change input SetContent NodeChange', updateEmailPreview);
+		editor.on('change input keyup', markAutomationPreviewStale);
 		editor.yoohwEmailNotifyPreviewBound = true;
 	}
 
@@ -209,7 +210,8 @@
 			var panel = event.target.closest('[data-an-panel]');
 			if (panel) { showStep(names.indexOf(panel.dataset.anPanel), false); }
 		}, true);
-		showStep(0, false);
+		var initial = names.indexOf($form.attr('data-an-initial-step'));
+		showStep(initial < 0 ? 0 : initial, false);
 	}
 
 	function initializeCancelDialog() {
@@ -281,6 +283,14 @@
 		var editor = window.tinymce ? window.tinymce.get('email_message') : null;
 		if (editor) { editor.setContent(option.dataset.body); }
 		updateEmailPreview();
+	});
+
+	function markAutomationPreviewStale() {
+		$('.an-automation-form .an-automation-sample').prop('hidden', true);
+		$('.an-automation-form .an-sample-stale').prop('hidden', false);
+	}
+	$(document).on('input change', '.an-automation-form input:not([type="hidden"]), .an-automation-form select, .an-automation-form textarea', function() {
+		if (this.name !== 'test_email' && this.name !== 'name') { markAutomationPreviewStale(); }
 	});
 	$(document).on('submit', 'form', function() { if (window.tinymce) { window.tinymce.triggerSave(); } });
 	$(document).on('change', '#recipient_source, .an-order-filters :input, .an-country-filter :input, #yoohw-advanced-notifications-roles-row :input, #yoohw-advanced-notifications-products-row :input, #yoohw-advanced-notifications-manual-row :input', toggleRecipientFields);

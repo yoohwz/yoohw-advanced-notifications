@@ -809,3 +809,14 @@ body.marketing_page_yoohw-advanced-notifications .select2-results__option--highl
 .yoohw-an-workspace .an-preview-device[aria-pressed="true"] { border: 2px solid var(--an-accent); background: #f6f7f7; color: var(--an-accent); }
 
 .yoohw-an-workspace .an-preview-device .dashicons { display: block; width: 20px; height: 20px; margin: 0; font-size: 20px; line-height: 20px; }
+
+/* Automation authoring shares the composer steps, editor and preview layout. */
+.an-automation-rule { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-top: 1px solid #dcdcde; }
+.an-automation-rule p { margin: 6px 0 0; color: #50575e; }
+.an-automation-state { display: inline-block; margin-left: 12px; padding: 2px 8px; border: 1px solid #c3c4c7; border-radius: 3px; font-size: 12px; }
+.an-automation-rule-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.an-automation-form details { margin-top: 16px; }
+.an-automation-form .an-field > input[type="number"] { max-width: 240px; }
+.an-automation-form .an-sample-stale { padding: 12px; border-left: 4px solid #dba617; background: #fcf9e8; }
+.an-automation-form .an-automation-sample[hidden], .an-automation-form .an-sample-stale[hidden] { display: none !important; }
+@media (max-width: 782px) { .an-automation-rule { align-items: flex-start; flex-direction: column; gap: 12px; } }

@@ -46,6 +46,9 @@ wp eval-file "$plugin_source/tests/contextual-campaigns.php" --path="$site_root"
 wp eval-file "$plugin_source/tests/checkout-subscription.php" --path="$site_root" | tee "$evidence_root/checkout-subscription.log"
 wp eval-file "$plugin_source/tests/contact-history.php" --path="$site_root" | tee "$evidence_root/contact-history.log"
 wp eval-file "$plugin_source/tests/subscriptions.php" --path="$site_root" | tee "$evidence_root/subscriptions.log"
+wp eval-file "$plugin_source/tests/purchase-history.php" --path="$site_root" | tee "$evidence_root/purchase-history.log"
+wp eval-file "$plugin_source/tests/automations.php" --path="$site_root" | tee "$evidence_root/automations.log"
+wp eval-file "$plugin_source/tests/automation-ui.php" --path="$site_root" | tee "$evidence_root/automation-ui.log"
 wp --skip-plugins --skip-themes eval-file "$plugin_source/tests/internationalization.php" --path="$site_root" | tee "$evidence_root/internationalization.log"
 
 # reliability.py launches independent WP-CLI processes through this wrapper.
@@ -58,3 +61,5 @@ python3 tests/operator-concurrency.py --wp-command "$test_root/wp" --output "$ev
 python3 tests/privacy-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/privacy-concurrency" | tee "$evidence_root/privacy-concurrency.log"
 
 python3 tests/subscription-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/subscription-concurrency" | tee "$evidence_root/subscription-concurrency.log"
+
+python3 tests/automation-concurrency.py --wp-command "$test_root/wp" --output "$evidence_root/automation-concurrency" | tee "$evidence_root/automation-concurrency.log"
