@@ -3,7 +3,7 @@
  * Plugin Name: Advanced Notifications for WooCommerce
  * Plugin URI: https://wordpress.org/plugins/yoohw-advanced-notifications
  * Description: Compose, preview, schedule and track WooCommerce customer email campaigns.
- * Version: 0.3.0
+ * Version: 0.4.0
  * Author: YoOhw Studio
  * Author URI: https://yoohw.com/
  * License: GPLv2 or later
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'YOOHW_AN_VERSION', '0.3.0' );
+define( 'YOOHW_AN_VERSION', '0.4.0' );
 
 function yoohw_an_load_textdomain() {
 	// Register bundled language packs for private installations without WordPress.org language packs.

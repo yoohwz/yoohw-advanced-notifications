@@ -1,4 +1,4 @@
-# Tính năng vận hành campaign (chưa phát hành)
+# Tính năng vận hành campaign (0.4.0)
 
 Nền đối chiếu: `74353181835147d8e68d9bca87a3d801c3e772dd` trên local và `origin/main`. Giữ schema recipient 3, Action Scheduler, manifest xác nhận và durable opt-out hiện có. Không thêm service hoặc kênh gửi khác.
 
@@ -78,7 +78,7 @@ Các form dùng label phía trên, chiều cao ô nhập/nút 40px và nhóm tr�
 
 Các selection field dùng SelectWoo có sẵn của WooCommerce (giao diện Select2), bao gồm các bộ lọc và người nhận mẫu; giá trị gốc và validation vẫn giữ nguyên. Hai nút icon Desktop/Mobile điều chỉnh bố cục preview trong cả bước soạn và preview người nhận, có tooltip/nhãn hỗ trợ đọc màn hình và trạng thái lựa chọn rõ ràng; không tạo thao tác gửi.
 
-### AN-5: Liên hệ từ Products và Orders (chưa phát hành)
+### AN-5: Liên hệ từ Products và Orders (0.4.0)
 
 - Products có **Email purchasers** tại danh sách và trang sửa. Sản phẩm cha gồm các variation; từng variation có liên kết riêng chỉ chọn người mua variation đó. Orders có bulk action **Email selected orders** trên cả HPOS và lưu trữ cũ; trang chi tiết có **Email this customer**. Các thao tác chỉ lưu bản nháp, chưa tạo job hay gửi email.
 - Nguồn **Selected orders** giữ tập ID rõ ràng, sửa được trong composer. Mặc định xét mọi trạng thái trong tập đã chọn để hỗ trợ thông báo cho cả đơn đang chờ/hủy; bộ lọc trạng thái có thể thu hẹp. Product customers tiếp tục mặc định Processing/Completed. Guest và tài khoản được gộp theo billing email đã chuẩn hóa, mỗi email nhận một thư cho campaign. Bộ lọc đơn vẫn khớp cùng một đơn; ID mất/quyền không đủ bị từ chối, không mở rộng tập chọn.
@@ -90,7 +90,7 @@ Các selection field dùng SelectWoo có sẵn của WooCommerce (giao diện Se
 Kiểm chứng mới: `tests/contextual-campaigns.php` và `tests/contextual-entrypoints.php`, được chạy trong CI regression với database reliability riêng và mail bị chặn. Bằng chứng theo candidate ghi trong PR. Không chứng minh SMTP/inbox thật.
 
 
-### AN-6: Đăng ký trực tiếp và lịch sử liên hệ (chưa phát hành)
+### AN-6: Đăng ký trực tiếp và lịch sử liên hệ (0.4.0)
 
 - Chèn shortcode `[yoohw_an_subscribe]` vào trang. Khách nhập email, chủ động chọn đồng ý rồi nhận thư xác nhận. Classic Checkout và Checkout Blocks có checkbox tùy chọn, không chọn sẵn, chỉ gửi yêu cầu xác nhận cho billing email; My Account quản lý đúng email hiện tại của tài khoản. Không suy diễn consent từ đơn hàng/tài khoản. Blocks dùng Additional Checkout Fields API của WooCommerce, không lưu lựa chọn mặc định trên hồ sơ khách.
 - Link email chỉ mở trang xác nhận; cần bấm **Confirm subscription** để thay đổi trạng thái, tránh scanner email tự đăng ký. Token ngẫu nhiên, chỉ lưu hash, hết hạn sau 24 giờ, dùng một lần. Trước xác nhận, trạng thái có hiệu lực vẫn là unknown hoặc unsubscribed; My Account và tìm kiếm subscriber thể hiện yêu cầu đang chờ.

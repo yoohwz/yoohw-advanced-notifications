@@ -5,7 +5,7 @@ Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
 Requires Plugins: woocommerce
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -19,7 +19,8 @@ Choose an audience, write your message using the rich-text editor, send a test e
 
 = Choose and review your audience =
 
-* Select product or variation purchasers, WooCommerce customers with matching orders, registered users or a pasted email list. Order-based sources include guest customers.
+* Select product or variation purchasers, selected orders, WooCommerce customers with matching orders, registered users, subscribed email addresses or a pasted email list. Order-based sources include guest customers.
+* Start from Email purchasers on Products or Email selected orders / Email this customer on Orders. These actions create a draft with an explicit scope; preview and confirmation are still required before sending.
 * Filter matching orders by product, category (including child categories), creation date, order status and billing country. These order conditions must match the same order.
 * Filter registered users by role and profile billing country. Only filters supported by the selected source can be used.
 * Select by subscription status or a previous campaign's recorded handoff outcome. Missing or unknown delivery history is not treated as proof that an email was never sent.
@@ -35,7 +36,7 @@ Choose an audience, write your message using the rich-text editor, send a test e
 * Start with three editable templates for updates, post-purchase guidance and service announcements.
 * Use WooCommerce HTML email styling, the rich-text editor and desktop/mobile previews for a sample recipient.
 * Send a test email and continue editing the draft before confirming recipients.
-* Personalize the message body with {customer_name} and {product_name}. A missing customer name falls back to the email address. The product variable is a campaign-wide label, not a record of each recipient's purchases. Subjects and headings do not expand these variables.
+* New campaigns personalize subject, heading and body with {customer_name}, {store_name}, {product_name}, {order_number}, {ordered_products} and {order_url}. Missing names use Customer. {product_name} remains a campaign-wide label; order details come from the matching order with the highest order ID and are empty without order context. Guest order links are empty; account order links require the owning account login. Already-confirmed older campaigns keep their original rendering contract.
 
 = Schedule and control sending =
 
@@ -48,7 +49,7 @@ Choose an audience, write your message using the rich-text editor, send a test e
 
 = One guide after Completed =
 
-* Open Automations to save a guide with optional products/categories and a delay of 0–8760 hours. Preview an accessible sample order or send a test to your chosen address, then explicitly enable the saved rule.
+* Follow Conditions → Content → Timing → Review in Automations. Compose with a live WooCommerce preview and Desktop/Mobile controls, then refresh the exact order sample in Review. Save a guide with optional products/categories and a delay of 0–8760 hours. Preview an accessible sample order or send a test to your chosen address, then explicitly enable the saved rule.
 * Only new transitions to Completed are captured. Enabling never scans historical orders. Each rule/order can create at most one email, including repeated transitions and multiple matching items; different orders for the same email can each receive a guide.
 * An active subscription is required at sending. Unknown is not consent. Orders must still be Completed, have the same valid billing email, match saved product/category conditions and not be fully refunded. Partial refunds remain eligible while value remains. Subscription, suppression and erasure protections are checked before handoff.
 * Content, triggering-order context and UTC due time are fixed when captured. Editing a rule changes future events. Disabling stops new events and cancels unstarted mail; started work may finish. Re-enabling does not restore cancelled mail.
@@ -120,13 +121,24 @@ Retention is off by default (0 days). When enabled, hourly cleanup removes conte
 
 Deactivation cancels pending campaign work and removes the reconciliation event while retaining campaign records and opt-outs. Reactivation does not automatically restart cancelled work.
 
-When upgrading, stop background workers that have already loaded the old plugin code before replacing files. Version 0.3.0 keeps the existing plugin slug, text domain, settings, campaigns and opt-outs. Do not downgrade directly to 0.2.2, which does not understand the new cancellation and erasure protections. Data from the separate YoOhw Extra Code plugin is not imported automatically.
+When upgrading, stop background workers that have already loaded the old plugin code before replacing files. Version 0.4.0 keeps the existing plugin slug, text domain, settings, campaigns and opt-outs. Do not downgrade directly to 0.2.2, which does not understand the new cancellation and erasure protections. Data from the separate YoOhw Extra Code plugin is not imported automatically.
 
 = Can I translate the interface? =
 
 Yes. Use the yoohw-advanced-notifications text domain and the included languages/yoohw-advanced-notifications.pot template with Poedit or Loco Translate. Store compiled locale files in wp-content/languages/plugins/ to preserve them across updates. Administrator-written email content and saved messages are not translated automatically. Preserve placeholders such as %s, {customer_name} and {product_name}.
 
 == Changelog ==
+
+= 0.4.0 =
+* Add product and order email entry points that create scoped drafts, with HPOS and posts order storage support.
+* Personalize new campaign subjects, headings and bodies with frozen customer, store and representative-order context; preserve already-confirmed campaigns.
+* Add verified subscriptions through a signup shortcode, Classic Checkout, Checkout Blocks and My Account without treating purchase or account creation as consent.
+* Add per-email contact history lookup with retained outcomes, reasons and campaign links.
+* Add store-wide first-time, repeat-buyer and purchase-inactivity filters for campaigns and saved audiences.
+* Add explicitly enabled Completed-order guides with product/category conditions, a fixed delay and one immutable delivery per rule/order.
+* Recheck rule, order, subscription, suppression and erasure before guide handoff; preserve cancellation, duplicate protection and unknown-outcome boundaries.
+* Align automation authoring with the four-step composer, live Desktop/Mobile previews and exact-order preview/test; hide stale samples after edits.
+* Fix Library warnings when optional draft or saved-audience names are missing.
 
 = 0.3.0 =
 * Rename the plugin to Advanced Notifications for WooCommerce; keep the existing slug, text domain and stored data.
@@ -160,6 +172,9 @@ Yes. Use the yoohw-advanced-notifications text domain and the included languages
 * Isolate plugin storage/hooks and use the current store's sender defaults.
 
 == Upgrade Notice ==
+
+= 0.4.0 =
+Adds scoped product/order campaigns, verified subscriptions, contact history, purchase-history filters and Completed-order guides. Existing data and confirmed work are retained. New automation rules stay disabled until explicitly enabled; there is no historical backfill. Stop workers using the old code before replacing plugin files. Do not downgrade to an older version without reviewing pending jobs and subscription/privacy compatibility.
 
 = 0.3.0 =
 Campaign controls, reusable drafts, audience filters, scheduling and privacy tools. Existing data is retained. Stop old background workers before upgrading. Do not downgrade to 0.2.2 because it lacks the new cancellation and erasure protections.
