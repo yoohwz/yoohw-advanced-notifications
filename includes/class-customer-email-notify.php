@@ -11,6 +11,9 @@ require_once __DIR__ . '/trait-campaign-audiences.php';
 require_once __DIR__ . '/trait-campaign-privacy.php';
 require_once __DIR__ . '/trait-campaign-entrypoints.php';
 require_once __DIR__ . '/trait-campaign-personalization.php';
+require_once __DIR__ . '/trait-campaign-subscriptions.php';
+require_once __DIR__ . '/trait-campaign-checkout.php';
+require_once __DIR__ . '/trait-campaign-contact-history.php';
 
 class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Reliability;
@@ -20,6 +23,9 @@ class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Privacy;
 	use YOOHW_AN_Campaign_Entrypoints;
 	use YOOHW_AN_Campaign_Personalization;
+	use YOOHW_AN_Campaign_Subscriptions;
+	use YOOHW_AN_Campaign_Checkout;
+	use YOOHW_AN_Campaign_Contact_History;
 
 	const ACTION_SEND_SINGLE_EMAIL = 'yoohw_an_send_single_email';
 	const ACTION_UNSUBSCRIBE       = 'yoohw_an_unsubscribe';
@@ -53,6 +59,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	const SOURCE_PRODUCT_CUSTOMERS   = 'product_customers';
 	const SOURCE_REGISTERED_USERS    = 'registered_users';
 	const SOURCE_WOOCOMMERCE_CUSTOMERS = 'woocommerce_customers';
+	const SOURCE_SUBSCRIBED = 'subscribed_emails';
 	const SOURCE_SELECTED_ORDERS = 'selected_orders';
 	const SOURCE_MANUAL_EMAILS        = 'manual_emails';
 
@@ -68,6 +75,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	public function __construct() {
 		$this->register_operator_features();
 		$this->register_contextual_entrypoints();
+		$this->register_subscriptions();
 		// Register after WooCommerce sorts Marketing at priority 99 to preserve our position.
 		add_action( 'admin_menu', [ $this, 'add_submenu' ], 100 );
 		add_action( 'admin_post_yoohw_an_send_product_customer_email', [ $this, 'handle_send_email' ] );
@@ -2485,6 +2493,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_invalid_shared_payload', __( 'Campaign content or sender details are incomplete.', 'yoohw-advanced-notifications' ) );
 		}
 
+		if ( self::SOURCE_SUBSCRIBED === ( $payload['recipient_source'] ?? '' ) ) { $email_payload['subscription_required'] = true; }
 		if ( ! empty( $payload['personalization_version'] ) ) { $email_payload['personalization_version'] = absint( $payload['personalization_version'] ); $email_payload['store_name'] = sanitize_text_field( $payload['store_name'] ?? get_bloginfo( 'name' ) ); }
 
 		$payload_hash = hash( 'sha256', wp_json_encode( $email_payload ) );
@@ -2564,7 +2573,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$this->campaign_payload_cache[ $payload_key ] = $record;
 
-		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'personalization_version', 'store_name' ] as $field ) {
+		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'personalization_version', 'store_name', 'subscription_required' ] as $field ) {
 			$args[ $field ] = isset( $record['payload'][ $field ] ) ? $record['payload'][ $field ] : '';
 		}
 
@@ -4263,6 +4272,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function get_recipient_sources() {
 		$sources = [
+			self::SOURCE_SUBSCRIBED => __( 'Subscribed email addresses', 'yoohw-advanced-notifications' ),
 			self::SOURCE_SELECTED_ORDERS => __( 'Selected orders', 'yoohw-advanced-notifications' ),
 			self::SOURCE_PRODUCT_CUSTOMERS   => __( 'Product customers', 'yoohw-advanced-notifications' ),
 			self::SOURCE_WOOCOMMERCE_CUSTOMERS => __( 'WooCommerce customers', 'yoohw-advanced-notifications' ),
@@ -4366,6 +4376,9 @@ class YOOHW_AN_Customer_Email_Notify {
 			: self::SOURCE_PRODUCT_CUSTOMERS;
 
 		switch ( $recipient_source ) {
+			case self::SOURCE_SUBSCRIBED:
+				return $this->get_subscribed_recipients();
+
 			case self::SOURCE_SELECTED_ORDERS:
 				return $this->get_order_customer_recipients( null, $payload['filters'] ?? [], $payload['order_ids'] ?? [] );
 
@@ -4520,9 +4533,9 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$record = $this->read_durable_option( 'yoohw_an_optout_' . hash( 'sha256', $email ) );
 		if ( $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ) { return true; }
-		if ( is_array( $record ) && ( ! empty( $record['suppressed'] ) || $email === ( $record['email'] ?? '' ) ) ) { return true; }
+		if ( is_array( $record ) && ( ! empty( $record['suppressed'] ) || $email === ( $record['email'] ?? '' ) ) ) { return ! $this->confirmed_suppression_override( $email ); }
 		$legacy = $this->normalize_unsubscribed_emails( $this->read_durable_option( self::OPTION_UNSUBSCRIBED_EMAILS ) );
-		return isset( $legacy[ $email ] );
+		return isset( $legacy[ $email ] ) && ! $this->confirmed_suppression_override( $email );
 	}
 
 	private function get_unsubscribed_emails() {
@@ -4533,7 +4546,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				$stored[ $optout['email'] ] = $optout;
 			}
 		}
-		return $this->normalize_unsubscribed_emails( $stored );
+		return array_filter( $this->normalize_unsubscribed_emails( $stored ), function ( $record, $email ) { return ! $this->confirmed_suppression_override( $email ); }, ARRAY_FILTER_USE_BOTH );
 	}
 
 	private function normalize_unsubscribed_emails( $stored ) {
@@ -4577,11 +4590,11 @@ class YOOHW_AN_Customer_Email_Notify {
 		if ( ! $this->acquire_campaign_lock( '__privacy__', 2 ) ) { return false; }
 		try {
 		$key = 'yoohw_an_optout_' . hash( 'sha256', $email );
-		$data = $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ? [ 'suppressed' => true ] : [ 'email' => $email, 'unsubscribed_at' => time(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
+		$data = $this->read_durable_option( 'yoohw_an_erased_' . hash( 'sha256', $email ) ) ? [ 'suppressed' => true ] : [ 'email' => $email, 'unsubscribed_at' => time(), 'generation' => wp_generate_uuid4(), 'campaign_id' => sanitize_text_field( $campaign_id ) ];
 		$data = $this->scrub_erased_references( $data );
-		$this->write_durable_option( $key, $data, true );
+		if ( false === $this->write_durable_option( $key, $data ) ) { return false; }
 		$saved = $this->read_durable_option( $key );
-		return is_array( $saved ) && ( ! empty( $saved['suppressed'] ) || $email === ( $saved['email'] ?? '' ) );
+		return $data === $saved;
 		} finally { $this->release_campaign_lock( '__privacy__' ); }
 	}
 
@@ -4904,6 +4917,10 @@ class YOOHW_AN_Customer_Email_Notify {
 			return;
 		}
 		try {
+			if ( ! empty( $args['subscription_required'] ) && 'subscribed' !== $this->subscription_record( $to )['status'] ) {
+				$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, 'skipped_unsubscribed', __( 'No active subscription before send.', 'yoohw-advanced-notifications' ) );
+				return;
+			}
 			$personal = $this->render_personalized_email( $args, array_merge( $args, [ 'email' => $to ] ) );
 			$message = $personal['message'];
 			$message = $this->append_unsubscribe_footer( $message, $to, $campaign_id );
@@ -4913,8 +4930,8 @@ class YOOHW_AN_Customer_Email_Notify {
 				return;
 			}
 			$this->mail_handoff_started = false;
-			$sent = $this->send_woocommerce_email( $to, $personal['subject'], $personal['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '' );
-			$status = $sent ? 'sent' : ( $this->mail_handoff_started ? 'unknown' : ( $this->is_email_unsubscribed( $to ) ? 'skipped_unsubscribed' : 'failed' ) );
+			$sent = $this->send_woocommerce_email( $to, $personal['subject'], $personal['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '', ! empty( $args['subscription_required'] ) );
+			$status = $sent ? 'sent' : ( $this->mail_handoff_started ? 'unknown' : ( ( $this->is_email_unsubscribed( $to ) || ( ! empty( $args['subscription_required'] ) && 'subscribed' !== $this->subscription_record( $to )['status'] ) ) ? 'skipped_unsubscribed' : 'failed' ) );
 			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, $status,
 				$sent ? __( 'Mail system accepted the request; inbox delivery is not verified.', 'yoohw-advanced-notifications' ) : ( $this->last_mail_error ?: __( 'Mail transport returned no confirmation. Check the mail provider before sending again.', 'yoohw-advanced-notifications' ) ),
 				$sent ? '' : ( $this->mail_handoff_started ? 'transport' : 'configuration' )
@@ -5257,11 +5274,16 @@ class YOOHW_AN_Customer_Email_Notify {
 		return class_exists( 'WC_Email' ) ? new WC_Email() : null;
 	}
 
-	private function send_woocommerce_email( $to, $subject, $heading, $message, $from_email = '', $from_name = '', $reply_to_email = '' ) {
+	private function send_woocommerce_email( $to, $subject, $heading, $message, $from_email = '', $from_name = '', $reply_to_email = '', $require_subscription = false ) {
 		$email_body = $this->build_woocommerce_email_body( $heading, $message );
 
 		if ( false === $email_body ) {
 			$this->last_mail_error = __( 'WooCommerce mailer is unavailable.', 'yoohw-advanced-notifications' );
+			return false;
+		}
+
+		if ( $require_subscription && 'subscribed' !== $this->subscription_record( $to )['status'] ) {
+			$this->last_mail_error = __( 'No active subscription before mail handoff.', 'yoohw-advanced-notifications' );
 			return false;
 		}
 

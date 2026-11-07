@@ -45,7 +45,7 @@ try {
 	$table = $call( 'get_recipient_tracking_table_name' );
 	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Verify the custom-table schema directly in the disposable test database.
 	$assert( 'tracking_table_installed', $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) );
-	$assert( 'five_local_recipient_sources', [ 'selected_orders', 'product_customers', 'woocommerce_customers', 'registered_users', 'manual_emails' ] === array_keys( $call( 'get_recipient_sources' ) ) );
+	$assert( 'six_local_recipient_sources', [ 'subscribed_emails', 'selected_orders', 'product_customers', 'woocommerce_customers', 'registered_users', 'manual_emails' ] === array_keys( $call( 'get_recipient_sources' ) ) );
 	$assert( 'unsupported_stored_source_is_empty', [] === $call( 'get_base_recipients_by_payload', [ 'recipient_source' => 'current_subscribers' ] ) );
 	update_option( 'woocommerce_email_from_address', 'store@example.com' );
 	update_option( 'woocommerce_email_from_name', 'Test Store' );

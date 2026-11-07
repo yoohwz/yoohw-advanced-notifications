@@ -31,7 +31,7 @@
 		revealApplicable('#yoohw-advanced-notifications-roles-row', registered);
 		revealApplicable('#yoohw-advanced-notifications-manual-row', manual);
 		revealApplicable('.an-order-filters', product || source === yoohwAN.customersSource || source === 'selected_orders');
-		revealApplicable('.an-country-filter', !manual);
+		revealApplicable('.an-country-filter', !manual && source !== 'subscribed_emails');
 		$('#yoohw-advanced-notifications-customers-row').toggle(source === yoohwAN.customersSource);
 		$('.an-incompatible-help').prop('hidden', !$('.an-inapplicable-selection').length);
 	}

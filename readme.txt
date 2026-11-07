@@ -47,6 +47,11 @@ Choose an audience, write your message using the rich-text editor, send a test e
 
 = Subscription and privacy tools =
 
+* Place [yoohw_an_subscribe] on a page for guest signup. Optional, unchecked Classic Checkout and Checkout Blocks fields (Blocks requires WooCommerce 8.9 or later) request a confirmation email; buying or creating an account never establishes consent.
+* Confirm mailbox ownership using the emailed link and confirmation button within 24 hours. A new verified request can replace an earlier unsubscribe; imports cannot. Erasure protection remains in effect.
+* View or change the preference for the current email in My Account. Choose Subscribed email addresses in the composer to include subscribers without an account or order.
+* Look up one email under Subscribers to review its retained campaign outcomes, reasons and campaign links. Handoff does not prove inbox delivery or reading.
+
 * Keep subscribed, unsubscribed and unknown states separate, with the recorded source and time where available.
 * Preview subscription/suppression imports before applying them. Repeated imports do not create duplicates or remove existing opt-outs.
 * Include signed unsubscribe links and check suppression again before handing off campaign mail.
@@ -96,7 +101,7 @@ Check its pause state, admission limit and queue diagnostics in Campaigns & Logs
 
 = What data does the plugin store and erase? =
 
-The plugin stores campaign content, confirmed recipients, scheduling and delivery records, drafts, saved audience criteria, subscription evidence and opt-outs in your WordPress database. Emails are sent through the mail transport configured on your site.
+The plugin stores campaign content, confirmed recipients, scheduling and delivery records, drafts, saved audience criteria, subscription evidence and opt-outs in your WordPress database. Emails are sent through the mail transport configured on your site. Subscription requests store the email, source, request/expiry time and a hashed confirmation token for at most 24 hours. Rate counters store hashes, not raw IP addresses. Confirmation requests are limited per address, client and site. A protected erased address is not re-enrolled or reconstructed by a new request.
 
 WordPress Tools > Export Personal Data and Erase Personal Data include this plugin's records for the requested email address, including guests. Erasure retains protective hashes and opt-out evidence to prevent reconstruction or another send. In-flight work or shared content in an active campaign may require another erasure pass after completion; the erasure result reports retained data.
 
