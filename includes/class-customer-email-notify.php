@@ -9,6 +9,8 @@ require_once __DIR__ . '/trait-campaign-controls.php';
 require_once __DIR__ . '/trait-campaign-authoring.php';
 require_once __DIR__ . '/trait-campaign-audiences.php';
 require_once __DIR__ . '/trait-campaign-privacy.php';
+require_once __DIR__ . '/trait-campaign-entrypoints.php';
+require_once __DIR__ . '/trait-campaign-personalization.php';
 
 class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Reliability;
@@ -16,6 +18,8 @@ class YOOHW_AN_Customer_Email_Notify {
 	use YOOHW_AN_Campaign_Authoring;
 	use YOOHW_AN_Campaign_Audiences;
 	use YOOHW_AN_Campaign_Privacy;
+	use YOOHW_AN_Campaign_Entrypoints;
+	use YOOHW_AN_Campaign_Personalization;
 
 	const ACTION_SEND_SINGLE_EMAIL = 'yoohw_an_send_single_email';
 	const ACTION_UNSUBSCRIBE       = 'yoohw_an_unsubscribe';
@@ -49,6 +53,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	const SOURCE_PRODUCT_CUSTOMERS   = 'product_customers';
 	const SOURCE_REGISTERED_USERS    = 'registered_users';
 	const SOURCE_WOOCOMMERCE_CUSTOMERS = 'woocommerce_customers';
+	const SOURCE_SELECTED_ORDERS = 'selected_orders';
 	const SOURCE_MANUAL_EMAILS        = 'manual_emails';
 
 	private $current_from_email = '';
@@ -62,6 +67,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	public function __construct() {
 		$this->register_operator_features();
+		$this->register_contextual_entrypoints();
 		// Register after WooCommerce sorts Marketing at priority 99 to preserve our position.
 		add_action( 'admin_menu', [ $this, 'add_submenu' ], 100 );
 		add_action( 'admin_post_yoohw_an_send_product_customer_email', [ $this, 'handle_send_email' ] );
@@ -1154,7 +1160,7 @@ class YOOHW_AN_Customer_Email_Notify {
 									]
 								);
 								?>
-								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Body variables: {customer_name} uses the saved recipient name, falling back to email; {product_name} is the shared campaign product label, never a personal purchase. With no product selection it uses the audience label. Subject and heading are literal.', 'yoohw-advanced-notifications' ); ?></p>
+								<p><?php /* translators: Keep {customer_name} and {product_name} unchanged. They are email placeholders. */ esc_html_e( 'Variables in subject, heading and body: {customer_name}, {store_name}, {product_name}, {order_number}, {ordered_products}, {order_url}. Order variables use the matching order with the highest order ID; preview shows its number and the matching order count. Without order context they are empty; missing names use Customer. {product_name} remains the shared campaign label. Order links require the matching account login; guests have no order link. The live editor shows template text; Preview Recipients and test email use the first eligible recipient.', 'yoohw-advanced-notifications' ); ?></p>
 								<p><?php esc_html_e( 'An unsubscribe link is added automatically to campaign emails.', 'yoohw-advanced-notifications' ); ?></p>
 							</div>
 						</div>
@@ -2324,23 +2330,15 @@ class YOOHW_AN_Customer_Email_Notify {
 				]
 			);
 
-			$test_message = str_replace(
-				[
-					'{customer_name}',
-					'{product_name}',
-				],
-				[
-					__( 'Test Customer', 'yoohw-advanced-notifications' ),
-					$payload['products_label'],
-				],
-				$payload['message']
-			);
+			$test_recipients = $this->get_recipients_by_payload( $payload );
+			$personal = $this->render_personalized_email( $payload, $test_recipients[0] ?? [ 'name' => __( 'Test Customer', 'yoohw-advanced-notifications' ), 'email' => $test_email ] );
+			$test_message = $personal['message'];
 			$test_message = $this->append_unsubscribe_footer( $test_message, $test_email, $payload['campaign_id'] );
 
 			$sent = $this->send_woocommerce_email(
 				$test_email,
-				'[TEST] ' . $payload['subject'],
-				$payload['heading'],
+				'[TEST] ' . $personal['subject'],
+				$personal['heading'],
 				$test_message,
 				$payload['from_email'],
 				$payload['from_name'],
@@ -2487,6 +2485,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			return new WP_Error( 'yoohw_an_invalid_shared_payload', __( 'Campaign content or sender details are incomplete.', 'yoohw-advanced-notifications' ) );
 		}
 
+		if ( ! empty( $payload['personalization_version'] ) ) { $email_payload['personalization_version'] = absint( $payload['personalization_version'] ); $email_payload['store_name'] = sanitize_text_field( $payload['store_name'] ?? get_bloginfo( 'name' ) ); }
+
 		$payload_hash = hash( 'sha256', wp_json_encode( $email_payload ) );
 		$payload_key  = $this->get_campaign_payload_option_name( $campaign_id, $delivery_id );
 		$record       = [
@@ -2564,10 +2564,21 @@ class YOOHW_AN_Customer_Email_Notify {
 
 		$this->campaign_payload_cache[ $payload_key ] = $record;
 
-		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email' ] as $field ) {
+		foreach ( [ 'subject', 'heading', 'message', 'products_label', 'from_email', 'from_name', 'reply_to_email', 'personalization_version', 'store_name' ] as $field ) {
 			$args[ $field ] = isset( $record['payload'][ $field ] ) ? $record['payload'][ $field ] : '';
 		}
 
+		if ( ! empty( $args['personalization_version'] ) ) {
+			$manifest = $this->read_durable_option( $this->campaign_manifest_key( $campaign_id ) );
+			$found = false;
+			foreach ( (array) ( $manifest['recipients'] ?? [] ) as $recipient ) {
+				if ( strtolower( $recipient['email'] ?? '' ) === strtolower( $args['to'] ?? '' ) && ! empty( $recipient['email'] ) ) {
+					$args['order_context'] = $this->sanitize_order_context( $recipient['order_context'] ?? [] );
+					$found = true; break;
+				}
+			}
+			if ( ! $found ) { return new WP_Error( 'missing_recipient_context', __( 'Confirmed recipient context is unavailable. No email was handed off.', 'yoohw-advanced-notifications' ) ); }
+		}
 		return $args;
 	}
 
@@ -2776,6 +2787,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			return $manual_emails;
 		}
 		$options_valid = $this->validate_recipient_source_options( [
+			'order_ids' => $this->parse_selected_order_ids( wp_unslash( $_POST['order_ids'] ?? '' ) ),
 			'recipient_source' => $recipient_source, 'user_roles' => $user_roles,
 			'manual_emails' => $manual_emails, 'test_mode' => $test_mode,
 		] );
@@ -2828,7 +2840,7 @@ class YOOHW_AN_Customer_Email_Notify {
 	// phpcs:enable WordPress.Security.NonceVerification.Missing
 
 	private function generate_campaign_hash( $payload ) {
-		$hash_payload = [ 'filters' => $payload['filters'] ?? [], 'schedule_policy' => $payload['schedule_policy'] ?? '', 'store_timezone' => $payload['store_timezone'] ?? '',
+		$hash_payload = [ 'order_ids' => $payload['order_ids'] ?? [], 'personalization_version' => $payload['personalization_version'] ?? 0, 'store_name' => $payload['store_name'] ?? '', 'filters' => $payload['filters'] ?? [], 'schedule_policy' => $payload['schedule_policy'] ?? '', 'store_timezone' => $payload['store_timezone'] ?? '',
 			'recipient_source' => isset( $payload['recipient_source'] ) ? (string) $payload['recipient_source'] : self::SOURCE_PRODUCT_CUSTOMERS,
 			'product_ids'      => isset( $payload['product_ids'] ) ? array_map( 'absint', (array) $payload['product_ids'] ) : [],
 			'subject'          => isset( $payload['subject'] ) ? (string) $payload['subject'] : '',
@@ -3074,7 +3086,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			]
 		);
 
-		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'schedule_summary' ] as $field ) { if ( isset( $payload[ $field ] ) ) { $entry[ $field ] = $payload[ $field ]; } }
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'schedule_summary', 'order_ids', 'personalization_version', 'store_name' ] as $field ) { if ( isset( $payload[ $field ] ) ) { $entry[ $field ] = $payload[ $field ]; } }
 		$entry['status_counts'] = isset( $existing['status_counts'] ) && is_array( $existing['status_counts'] )
 			? $this->sanitize_count_map( $existing['status_counts'] )
 			: [];
@@ -3326,7 +3338,7 @@ class YOOHW_AN_Customer_Email_Notify {
 			'exclusion_labels'       => isset( $campaign['exclusion_labels'] ) && is_array( $campaign['exclusion_labels'] ) ? $this->sanitize_text_list( $campaign['exclusion_labels'] ) : [],
 		];
 
-		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone' ] as $field ) { if ( isset( $campaign[ $field ] ) ) { $payload[ $field ] = $campaign[ $field ]; } }
+		foreach ( [ 'internal_name', 'filters', 'schedule_policy', 'store_timezone', 'order_ids', 'personalization_version', 'store_name' ] as $field ) { if ( isset( $campaign[ $field ] ) ) { $payload[ $field ] = $campaign[ $field ]; } }
 		if ( empty( $payload['products_label'] ) ) {
 			$payload['products_label'] = ! empty( $payload['product_ids'] )
 				? $this->get_selected_products_label( $payload['product_ids'] )
@@ -3428,6 +3440,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function sanitize_recipient_context( $recipient ) {
 		return [
+			'order_context' => $this->sanitize_order_context( $recipient['order_context'] ?? [] ),
 			'user_id'  => isset( $recipient['user_id'] ) ? absint( $recipient['user_id'] ) : 0,
 			'email'    => isset( $recipient['email'] ) ? sanitize_email( $recipient['email'] ) : '',
 			'name'     => isset( $recipient['name'] ) ? sanitize_text_field( $recipient['name'] ) : '',
@@ -4250,6 +4263,7 @@ class YOOHW_AN_Customer_Email_Notify {
 
 	private function get_recipient_sources() {
 		$sources = [
+			self::SOURCE_SELECTED_ORDERS => __( 'Selected orders', 'yoohw-advanced-notifications' ),
 			self::SOURCE_PRODUCT_CUSTOMERS   => __( 'Product customers', 'yoohw-advanced-notifications' ),
 			self::SOURCE_WOOCOMMERCE_CUSTOMERS => __( 'WooCommerce customers', 'yoohw-advanced-notifications' ),
 			self::SOURCE_REGISTERED_USERS    => __( 'All registered users', 'yoohw-advanced-notifications' ),
@@ -4282,6 +4296,8 @@ class YOOHW_AN_Customer_Email_Notify {
 	}
 
 	private function validate_recipient_source_options( $payload ) {
+		$selected = $this->validate_selected_orders( $payload );
+		if ( is_wp_error( $selected ) ) { return $selected; }
 		$valid = $this->validate_audience_filters( $payload );
 		if ( is_wp_error( $valid ) ) { return $valid; }
 		$source = isset( $payload['recipient_source'] ) ? $payload['recipient_source'] : '';
@@ -4350,6 +4366,9 @@ class YOOHW_AN_Customer_Email_Notify {
 			: self::SOURCE_PRODUCT_CUSTOMERS;
 
 		switch ( $recipient_source ) {
+			case self::SOURCE_SELECTED_ORDERS:
+				return $this->get_order_customer_recipients( null, $payload['filters'] ?? [], $payload['order_ids'] ?? [] );
+
 			case self::SOURCE_REGISTERED_USERS:
 				return $this->get_registered_user_recipients( [], isset( $payload['user_roles'] ) ? $payload['user_roles'] : [] );
 
@@ -4885,7 +4904,8 @@ class YOOHW_AN_Customer_Email_Notify {
 			return;
 		}
 		try {
-			$message = str_replace( [ '{customer_name}', '{product_name}' ], [ $args['name'] ?? $to, $args['products_label'] ?? '' ], $args['message'] );
+			$personal = $this->render_personalized_email( $args, array_merge( $args, [ 'email' => $to ] ) );
+			$message = $personal['message'];
 			$message = $this->append_unsubscribe_footer( $message, $to, $campaign_id );
 			// Read the durable opt-out immediately before entering the sending path.
 			if ( $this->is_email_unsubscribed( $to ) ) {
@@ -4893,7 +4913,7 @@ class YOOHW_AN_Customer_Email_Notify {
 				return;
 			}
 			$this->mail_handoff_started = false;
-			$sent = $this->send_woocommerce_email( $to, $args['subject'], $args['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '' );
+			$sent = $this->send_woocommerce_email( $to, $personal['subject'], $personal['heading'], $message, $args['from_email'] ?? '', $args['from_name'] ?? '', $args['reply_to_email'] ?? '' );
 			$status = $sent ? 'sent' : ( $this->mail_handoff_started ? 'unknown' : ( $this->is_email_unsubscribed( $to ) ? 'skipped_unsubscribed' : 'failed' ) );
 			$this->finish_delivery( $campaign_id, $delivery_id, $to, $claim, $status,
 				$sent ? __( 'Mail system accepted the request; inbox delivery is not verified.', 'yoohw-advanced-notifications' ) : ( $this->last_mail_error ?: __( 'Mail transport returned no confirmation. Check the mail provider before sending again.', 'yoohw-advanced-notifications' ) ),
@@ -4966,7 +4986,8 @@ class YOOHW_AN_Customer_Email_Notify {
 		return $this->get_order_customer_recipients( (array) $product_ids );
 	}
 
-	private function get_order_customer_recipients( $product_ids = null, $filters = [] ) {
+	private function get_order_customer_recipients( $product_ids = null, $filters = [], $order_ids = null ) {
+		if ( null !== $order_ids && ! $order_ids ) { return []; }
 		$all_products = null === $product_ids;
 		$product_ids = $all_products ? [] : $product_ids;
 		$product_ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $product_ids ) ) ) );
@@ -5023,9 +5044,10 @@ class YOOHW_AN_Customer_Email_Notify {
 		do {
 			$orders = wc_get_orders(
 				[
+					'post__in' => null === $order_ids ? [] : $order_ids,
 					'limit'   => self::ORDER_QUERY_LIMIT,
 					'paged'   => $page,
-					'status'  => ! empty( $filters['order_statuses'] ) ? $filters['order_statuses'] : [ 'processing', 'completed' ],
+					'status'  => ! empty( $filters['order_statuses'] ) ? $filters['order_statuses'] : ( null === $order_ids ? [ 'processing', 'completed' ] : array_keys( wc_get_order_statuses() ) ),
 					'return'  => 'objects',
 					'orderby' => 'ID',
 					'order'   => 'DESC',
@@ -5041,6 +5063,7 @@ class YOOHW_AN_Customer_Email_Notify {
 					continue;
 				}
 
+				if ( null !== $order_ids && ! in_array( (int) $order->get_id(), $order_ids, true ) ) { continue; }
 				if ( ! $this->order_matches_filters( $order, $filters ) ) { continue; }
 				$has_product = $all_products;
 
@@ -5075,9 +5098,8 @@ class YOOHW_AN_Customer_Email_Notify {
 
 				$email = strtolower( sanitize_email( $order->get_billing_email() ) );
 
-				if ( ! is_email( $email ) || isset( $customers[ $email ] ) ) {
-					continue;
-				}
+				if ( ! is_email( $email ) ) { continue; }
+				if ( isset( $customers[ $email ] ) ) { $customers[ $email ]['order_context']['count']++; continue; }
 
 				$name = trim( $order->get_billing_first_name() . ' ' . $order->get_billing_last_name() );
 
@@ -5085,6 +5107,7 @@ class YOOHW_AN_Customer_Email_Notify {
 					'user_id' => absint( $order->get_user_id() ),
 					'email'   => $email,
 					'name'    => $name ?: $email,
+					'order_context' => $this->context_from_order( $order ),
 					'country' => $this->normalize_country_code( $order->get_billing_country() ),
 					'state'   => $this->normalize_location_part( $order->get_billing_state() ),
 					'city'    => $this->normalize_location_part( $order->get_billing_city() ),

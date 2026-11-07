@@ -178,6 +178,10 @@ trait YOOHW_AN_Campaign_Privacy {
 		foreach ( $rows as $index => $row ) {
 			$fields = [];
 			foreach ( $row as $name => $value ) { $fields[] = [ 'name' => $name, 'value' => $value ]; }
+			$manifest = $this->read_durable_option( $this->campaign_manifest_key( $row['campaign_id'] ) );
+			foreach ( (array) ( $manifest['recipients'] ?? [] ) as $recipient ) {
+				if ( strtolower( $recipient['email'] ?? '' ) === $email && ! empty( $recipient['order_context'] ) ) { $fields[] = [ 'name' => __( 'Saved order context', 'yoohw-advanced-notifications' ), 'value' => wp_json_encode( $this->sanitize_order_context( $recipient['order_context'] ) ) ]; }
+			}
 			$data[] = [ 'group_id' => 'yoohw-an', 'group_label' => __( 'Email campaigns', 'yoohw-advanced-notifications' ), 'item_id' => 'yoohw-an-' . $row['campaign_id'] . '-' . $page . '-' . $index, 'data' => $fields ];
 		}
 		if ( 1 === (int) $page ) {
@@ -202,7 +206,7 @@ trait YOOHW_AN_Campaign_Privacy {
 	private function scrub_personal_value( $value, $email ) {
 		if ( is_array( $value ) ) {
 			if ( strtolower( $value['email'] ?? $value['to'] ?? '' ) === $email ) {
-				foreach ( [ 'email', 'to', 'name', 'recipient_name', 'country', 'state', 'city', 'timezone', 'user_id' ] as $field ) { if ( isset( $value[ $field ] ) ) { $value[ $field ] = ''; } }
+				foreach ( [ 'email', 'to', 'name', 'recipient_name', 'country', 'state', 'city', 'timezone', 'user_id', 'order_context' ] as $field ) { if ( isset( $value[ $field ] ) ) { $value[ $field ] = ''; } }
 			}
 			$result = [];
 			foreach ( $value as $key => $item ) { if ( is_string( $key ) && strtolower( $key ) === $email ) { $key = hash( 'sha256', $email ); } $result[ $key ] = $this->scrub_personal_value( $item, $email ); }

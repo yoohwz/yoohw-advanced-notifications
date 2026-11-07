@@ -41,6 +41,8 @@ wp plugin activate yoohw-advanced-notifications --path="$site_root"
 
 wp eval-file "$plugin_source/tests/integration.php" --path="$site_root" | tee "$evidence_root/integration.log"
 wp eval-file "$plugin_source/tests/operator-features.php" --path="$site_root" | tee "$evidence_root/operator-features.log"
+wp eval-file "$plugin_source/tests/contextual-entrypoints.php" --path="$site_root" | tee "$evidence_root/contextual-entrypoints.log"
+wp eval-file "$plugin_source/tests/contextual-campaigns.php" --path="$site_root" | tee "$evidence_root/contextual-campaigns.log"
 wp --skip-plugins --skip-themes eval-file "$plugin_source/tests/internationalization.php" --path="$site_root" | tee "$evidence_root/internationalization.log"
 
 # reliability.py launches independent WP-CLI processes through this wrapper.

@@ -22,7 +22,7 @@ trait YOOHW_AN_Campaign_Audiences {
 		if ( ! is_array( $f ) || array_diff( array_keys( $f ), [ 'date_from', 'date_to', 'last_days', 'country', 'subscription', 'history_campaign', 'history_mode', 'category_ids', 'order_statuses' ] ) ) { return $invalid; }
 		foreach ( [ 'category_ids', 'order_statuses' ] as $key ) { if ( isset( $f[ $key ] ) && ! is_array( $f[ $key ] ) ) { return $invalid; } }
 		$source = $p['recipient_source'] ?? '';
-		$order_source = in_array( $source, [ self::SOURCE_PRODUCT_CUSTOMERS, self::SOURCE_WOOCOMMERCE_CUSTOMERS ], true );
+		$order_source = in_array( $source, [ self::SOURCE_PRODUCT_CUSTOMERS, self::SOURCE_WOOCOMMERCE_CUSTOMERS, self::SOURCE_SELECTED_ORDERS ], true );
 		foreach ( [ 'date_from', 'date_to', 'last_days', 'category_ids', 'order_statuses' ] as $field ) { if ( ! $order_source && ! empty( $f[ $field ] ) ) { return $invalid; } }
 		if ( self::SOURCE_MANUAL_EMAILS === $source && ! empty( $f['country'] ) ) { return $invalid; }
 		foreach ( [ 'date_from', 'date_to' ] as $field ) {
@@ -128,12 +128,13 @@ trait YOOHW_AN_Campaign_Audiences {
 		}
 	}
 	private function render_audience_fields( $p ) {
+		$this->render_selected_orders_field( $p );
 		$f = $p['filters'] ?? [];
 		$invalid = is_wp_error( $this->validate_audience_filters( $p ) );
 		if ( $invalid ) { echo '<p role="alert">' . esc_html__( 'Saved conditions are invalid or unavailable. They remain selected; correct or explicitly remove them before previewing.', 'yoohw-advanced-notifications' ) . '</p>'; }
 		echo '<section class="yoohw-advanced-notifications-panel"><h2>' . esc_html__( 'Audience conditions', 'yoohw-advanced-notifications' ) . '</h2><div class="an-order-filters"><div class="an-form-grid an-form-grid-three">';
 		foreach ( [ 'date_from' => [ 'date', __( 'Order created from (store timezone)', 'yoohw-advanced-notifications' ) ], 'date_to' => [ 'date', __( 'Through date (inclusive)', 'yoohw-advanced-notifications' ) ], 'last_days' => [ 'number', __( 'Or last N × 24 hours', 'yoohw-advanced-notifications' ) ] ] as $key => $field ) { echo '<div class="an-field"><label>' . esc_html( $field[1] ) . ' <input type="' . esc_attr( $invalid ? 'text' : $field[0] ) . '" name="audience_filters[' . esc_attr( $key ) . ']" value="' . esc_attr( $f[ $key ] ?? '' ) . '"></label></div>'; }
-		echo '</div><div class="an-form-grid"><div class="an-field"><label>' . esc_html__( 'Matching order statuses (default processing/completed)', 'yoohw-advanced-notifications' ) . '<select multiple name="audience_filters[order_statuses][]">';
+		echo '</div><div class="an-form-grid"><div class="an-field"><label>' . esc_html__( 'Matching order statuses (selected orders: all; other sources: processing/completed)', 'yoohw-advanced-notifications' ) . '<select multiple name="audience_filters[order_statuses][]">';
 		foreach ( $this->get_order_status_options() as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '" ' . selected( in_array( $key, $f['order_statuses'] ?? [], true ), true, false ) . '>' . esc_html( $label ) . '</option>'; }
 		$this->render_unavailable_options( $f['order_statuses'] ?? [], array_keys( $this->get_order_status_options() ) );
 		echo '</select></label></div><div class="an-field"><label>' . esc_html__( 'Categories (includes all descendants)', 'yoohw-advanced-notifications' ) . '<select multiple name="audience_filters[category_ids][]">';
